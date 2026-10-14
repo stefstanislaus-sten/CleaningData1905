@@ -215,7 +215,11 @@ def tampilkan_pencarian():
                 )
                 st.caption("Sumber: " + tautan)
             if data["saran_html"]:
-                st.iframe(data["saran_html"], height="content")  # Saran Penelusuran Google
+                # Saran Penelusuran Google (kompatibel versi Streamlit baru & lama)
+                if hasattr(st, "iframe"):
+                    st.iframe(data["saran_html"], height="content")
+                else:
+                    components.html(data["saran_html"], height=120, scrolling=True)
         st.link_button("Buka hasil lengkap di Google ↗", url_google)
         if st.button("Tutup hasil"):
             st.session_state["cari_hasil"] = None
@@ -251,6 +255,9 @@ select{max-width:100%}
 @media(max-width:520px){select{min-width:0;width:100%}}
 .small{font-size:12px;color:var(--muted)}
 input.ro{background:var(--card);font-weight:600;cursor:default}
+.hide-sg .sg-col{display:none}
+.sg{min-width:150px;padding:5px 9px;border:1px dashed var(--line);border-radius:6px;background:var(--card);text-align:right;opacity:.95;user-select:none}
+.sg small{display:block;font-size:11px;color:var(--muted);font-weight:400}
 .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:6px 0}
 button{padding:7px 12px;border:1px solid var(--line);border-radius:6px;background:var(--btn);color:var(--fg);font:inherit;cursor:pointer}
 button:hover{filter:brightness(1.08)}
@@ -266,10 +273,12 @@ pre{margin:4px 0;padding:10px 12px;background:var(--card);border-radius:8px;whit
 .kk select{min-width:90px}
 </style></head>
 <body><div id="app">
-<div class="row"><b>Kategori kewajaran</b><select id="kat"></select></div>
-<div class="scroll"><table>
-<thead><tr><th>Kolom</th><th>Perhitungan Data Awal</th><th>Perhitungan Data Adjustment</th><th class="num">Perubahan (Adj &minus; Awal)</th></tr></thead>
+<div class="row"><b>Kategori kewajaran</b><select id="kat"></select>
+<label><input type="checkbox" id="saran"> Tampilkan saran perbaikan?</label></div>
+<div class="scroll"><table id="tin" class="hide-sg">
+<thead><tr><th>Kolom</th><th>Perhitungan Data Awal</th><th>Perhitungan Data Adjustment</th><th class="num">Perubahan (Adj &minus; Awal)</th><th class="num sg-col">Saran perbaikan perhitungan</th></tr></thead>
 <tbody id="inbody"></tbody></table></div>
+<div id="saranInfo"></div>
 <div class="row"><button id="salin">↩️ Samakan adjustment dengan data awal</button><button id="reset">🗑️ Reset semua isian</button></div>
 <div class="small">Adjustment otomatis mengikuti Data Awal selama belum Anda ubah sendiri. Semua hasil dihitung langsung saat mengetik.</div>
 
@@ -291,7 +300,7 @@ pre{margin:4px 0;padding:10px 12px;background:var(--card);border-radius:8px;whit
 const KOLOM=__KOLOM__, NAMA=__NAMA__, KAT=__KAT__, KODE=__KODE__, KODE_DC=__KODE_DC__;
 const U4=[0.2,0.4], U5=[0.4,0.6], KEY='dc_anomali_state_v2';
 const $=id=>document.getElementById(id);
-let S={kat:'A',awal:{},adj:{},dirty:{},kode:KODE[0],beda:false,kodeKol:{},pakai28c:false};
+let S={kat:'A',awal:{},adj:{},dirty:{},kode:KODE[0],beda:false,kodeKol:{},pakai28c:false,saran:false};
 try{const r=sessionStorage.getItem(KEY); if(r) S=Object.assign(S,JSON.parse(r));}catch(e){}
 KOLOM.forEach(k=>{S.awal[k]=S.awal[k]||'';S.adj[k]=S.adj[k]||'';});
 
@@ -357,7 +366,9 @@ function syncTotal(){  // 28c = 28a + 28b (otomatis)
 function hitung(t){
   const v={};let all=true;
   KOLOM.forEach(k=>{v[k]=parse(t[k]); if(k!=='28c'&&v[k]!==null) all=false;});
-  if(all) return null;
+  return all?null:hitungV(v);
+}
+function hitungV(v){
   const g=k=>nz(v[k]);
   const aset=g('28a')+g('28b');
   const u2=g('27a')-(g('26b')+g('26c')+g('26d'));
@@ -384,6 +395,66 @@ function delta(a,b,money){
   let d=b-a; if(!money) d=Math.round(d*1000)/1000;
   if(Math.abs(d)<1e-9) return {t:'0',c:'zero'};
   return {t:(d>0?'+':'−')+(money?fmtAngka(Math.abs(d)):fmtR(Math.abs(d))),c:d>0?'up':'down'};
+}
+
+// ---------- saran perbaikan ----------
+function inOk(r,lo,hi){const x=Math.round(r*1000)/1000;return x>=lo-1e-9&&x<=hi+1e-9;}
+function ratioFix(r,lo,hi){  // rasio terdekat yang wajar (dengan margin kecil di dalam interval)
+  const m=(hi-lo)*0.02,l=lo+m,h=hi-m;
+  if(r===null||!isFinite(r)) return h;
+  if(inOk(r,lo,hi)) return r;
+  return r<lo?l:h;
+}
+function cekOk(v){
+  const h=hitungV(v);
+  return evaluasi(h).every(e=>e.cls!=='bad'&&e.cls!=='warn');
+}
+function alloc(n,ks,delta,fb){  // bagi perubahan proporsional terhadap nilai sekarang
+  if(Math.abs(delta)<1e-9) return;
+  const s=n[ks[0]]+n[ks[1]];
+  if(s>0) ks.forEach(k=>{n[k]=n[k]+delta*(n[k]/s);}); else n[fb]+=delta;
+}
+function rencana(mode,v){
+  const A0=v['28a']+v['28b'], R0=v['27a']-v['26c'], C0=v['26b']+v['26d'];
+  let R=R0,A=A0,a27=v['27a'];
+  if(mode==='aset'){                       // output tetap, aset disesuaikan
+    if(R0<=0) return null;
+    A=R0/ratioFix(A0>0?R0/A0:null,U4[0],U4[1]);
+  }else{                                   // aset tetap, pendapatan (27a) disesuaikan
+    if(A0<=0) return null;
+    R=ratioFix(R0/A0,U4[0],U4[1])*A0; a27=R+v['26c'];
+  }
+  const iv=KAT[S.kat]||[0.001,1];
+  const Nt=ratioFix((R-C0)/R,iv[0],iv[1])*R;   // NTB target (U3)
+  const n=Object.assign({},v); n['27a']=a27;
+  alloc(n,['26b','26d'],(R-Nt)-C0,'26b');      // biaya disesuaikan
+  alloc(n,['28a','28b'],A-A0,'28b');           // aset disesuaikan
+  if(Nt>1e-9) n['26a']=ratioFix(v['26a']/Nt,U5[0],U5[1])*Nt;  // upah (U5)
+  KOLOM.forEach(k=>{ if(Math.abs(n[k]-v[k])<=1e-6*Math.max(1,Math.abs(v[k]))) n[k]=v[k]; });
+  n['28c']=n['28a']+n['28b'];
+  return n;
+}
+function bulatkan(n,v,step){
+  const r=Object.assign({},n);
+  KOLOM.forEach(k=>{ if(k!=='28c'&&r[k]!==v[k]) r[k]=Math.round(r[k]/step)*step; });
+  r['28c']=r['28a']+r['28b']; return r;
+}
+function sarankan(){
+  const v={};let any=false;
+  KOLOM.forEach(k=>{const x=parse(S.adj[k]); if(k!=='28c'&&x!==null) any=true; v[k]=nz(x);});
+  if(!any) return {tipe:'kosong'};
+  if(cekOk(v)) return {tipe:'wajar',v};
+  const hasil=[];
+  ['aset','pendapatan'].forEach(m=>{
+    const n=rencana(m,v); if(!n) return;
+    let f=bulatkan(n,v,1000), ok=cekOk(f);
+    if(!ok){f=bulatkan(n,v,1); ok=cekOk(f);}
+    let tot=0; KOLOM.forEach(k=>{if(k!=='28c') tot+=Math.abs(f[k]-v[k]);});
+    hasil.push({mode:m,n:f,ok:ok,tot:tot});
+  });
+  if(!hasil.length) return {tipe:'tidak',v};
+  hasil.sort((a,b)=>((b.ok?1:0)-(a.ok?1:0))||(a.tot-b.tot));
+  return {tipe:hasil[0].ok?'ok':'sebagian',v:v,n:hasil[0].n,mode:hasil[0].mode};
 }
 
 // ---------- render ----------
@@ -419,6 +490,35 @@ function renderResult(){
                  :`<div class="box ok">${j}: semua indikator wajar ✅</div>`;
   });
   $('ringkas').innerHTML=r;
+}
+function renderSaran(){
+  $('tin').classList.toggle('hide-sg',!S.saran);
+  const info=$('saranInfo'); info.innerHTML='';
+  if(!S.saran) return;
+  const r=sarankan(), ubah=[];
+  KOLOM.forEach(k=>{
+    const e=$('s_'+k); let d=0;
+    if(r.n) d=r.n[k]-r.v[k];
+    if(Math.abs(d)<0.5){e.innerHTML='—';return;}
+    if(k!=='28c') ubah.push(k);
+    e.innerHTML=`<span class="${d>0?'up':'down'}">${d>0?'Tambah ':'Kurangi '}${fmtAngka(Math.abs(d))}</span><small>menjadi ${fmtAngka(r.n[k])}</small>`;
+  });
+  let msg='',cls='na';
+  if(r.tipe==='kosong'){msg='Isi data dulu untuk melihat saran.';}
+  else if(r.tipe==='wajar'){msg='✅ Data Adjustment sudah wajar, tidak ada saran perbaikan.';cls='ok';}
+  else if(r.tipe==='tidak'){msg='⚠️ Saran belum bisa dihitung. Pastikan 27a lebih besar dari 26c, atau isi nilai aset (28a/28b).';cls='warn';}
+  else{
+    const strategi=r.mode==='aset'
+      ? 'Output (27a, 26c) dipertahankan; aset (28a/28b), biaya (26b/26d), dan upah (26a) disesuaikan seperlunya.'
+      : 'Aset (28a/28b) dipertahankan; pendapatan (27a), biaya (26b/26d), dan upah (26a) disesuaikan seperlunya.';
+    if(r.tipe==='ok'){msg='✅ Jika saran diterapkan, U2–U5 semua wajar. Kolom yang disarankan berubah: '+ubah.join(', ')+'. '+strategi;cls='ok';}
+    else{
+      const ev=evaluasi(hitungV(r.n));
+      const sisa=ev.map((e,i)=>(e.cls==='bad'||e.cls==='warn')?NAMA_IND[i]:null).filter(Boolean);
+      msg='⚠️ Saran terbaik masih menyisakan: '+sisa.join(', ')+' (mis. karena kategori yang dipilih). Kolom yang berubah: '+ubah.join(', ')+'.';cls='warn';
+    }
+  }
+  info.innerHTML=`<div class="box ${cls}"></div>`; info.firstChild.textContent=msg;
 }
 function kodeFor(k){return S.beda?(S.kodeKol[k]||S.kode):S.kode;}
 function kalimat(kode,kol,awal,ubah,tampil){
@@ -463,7 +563,7 @@ function buildKodeKol(){
 }
 function save(){try{sessionStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
 function fit(){}  // tinggi iframe diatur tetap dari sisi Python
-function update(){renderDeltaCols();renderResult();renderGen();save();fit();}
+function update(){renderDeltaCols();renderResult();renderSaran();renderGen();save();fit();}
 
 // ---------- init ----------
 Object.keys(KAT).forEach(k=>{
@@ -475,6 +575,7 @@ Object.keys(KAT).forEach(k=>{
 $('kat').value=S.kat; $('kat').onchange=()=>{S.kat=$('kat').value;update();};
 KODE.forEach(x=>{const o=document.createElement('option');o.value=x;o.textContent=x+' — '+KODE_DC[x];$('kode').appendChild(o);});
 $('kode').value=S.kode; $('kode').onchange=()=>{S.kode=$('kode').value;update();};
+$('saran').checked=S.saran; $('saran').onchange=()=>{S.saran=$('saran').checked;update();};
 $('p28c').checked=S.pakai28c; $('p28c').onchange=()=>{S.pakai28c=$('p28c').checked;buildKodeKol();update();};
 $('beda').checked=S.beda; $('beda').onchange=()=>{S.beda=$('beda').checked;buildKodeKol();update();};
 
@@ -483,7 +584,8 @@ KOLOM.forEach(k=>{
   rows+=`<tr><td><b>${k}</b> ${NAMA[k]}</td>
   <td><input type="text" id="a_${k}" inputmode="decimal" autocomplete="off" placeholder="0"${k==='28c'?' readonly tabindex="-1" class="ro"':''}></td>
   <td><input type="text" id="d_${k}" inputmode="decimal" autocomplete="off" placeholder="0"${k==='28c'?' readonly tabindex="-1" class="ro"':''}></td>
-  <td class="num"><span id="x_${k}"></span></td></tr>`;
+  <td class="num"><span id="x_${k}"></span></td>
+  <td class="sg-col"><div class="sg" id="s_${k}">—</div></td></tr>`;
 });
 $('inbody').innerHTML=rows;
 KOLOM.forEach(k=>{
@@ -510,7 +612,7 @@ window.__S=()=>S;
 """
 
 
-TINGGI_ANOMALI = 1700  # piksel; jika isi lebih panjang, bisa digulir di dalam kotak
+TINGGI_ANOMALI = 1850  # piksel; jika isi lebih panjang, bisa digulir di dalam kotak
 
 
 def render_anomali():
@@ -600,6 +702,8 @@ with tab_anomali:
             "- **R_Output/Aset [U4]** = Output / 28c, dengan **28c = 28a + 28b** → wajar jika **0,200 – 0,400**\n"
             "- **R_Upah/NTB [U5]** = 26a / NTB → wajar jika **0,400 – 0,600**\n\n"
             "Rasio dibulatkan ke 3 digit di belakang koma sebelum dicek terhadap interval. "
-            "Titik = pemisah ribuan, koma = desimal."
+            "Titik = pemisah ribuan, koma = desimal.\n\n"
+            "**Saran perbaikan**: centang *Tampilkan saran perbaikan?* untuk memunculkan kolom "
+            "saran (nominal tambah/kurangi per kolom agar U2–U5 wajar)."
         )
     render_anomali()
