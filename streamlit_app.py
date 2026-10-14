@@ -281,7 +281,8 @@ pre{margin:4px 0;padding:10px 12px;background:var(--card);border-radius:8px;whit
 <h3>Generate kalimat perbaikan</h3>
 <div class="small">Kalimat dibuat hanya untuk kolom yang nilainya berbeda antara Data Awal dan Adjustment.</div>
 <div class="row"><b>Kode DC</b><select id="kode"></select>
-<label><input type="checkbox" id="beda"> Pakai kode DC berbeda untuk tiap kolom</label></div>
+<label><input type="checkbox" id="beda"> Pakai kode DC berbeda untuk tiap kolom</label>
+<label><input type="checkbox" id="p28c"> Sertakan 28c (total aset) dalam kalimat</label></div>
 <div id="kk" class="kk"></div>
 <div id="gen"></div>
 </div>
@@ -290,7 +291,7 @@ pre{margin:4px 0;padding:10px 12px;background:var(--card);border-radius:8px;whit
 const KOLOM=__KOLOM__, NAMA=__NAMA__, KAT=__KAT__, KODE=__KODE__, KODE_DC=__KODE_DC__;
 const U4=[0.2,0.4], U5=[0.4,0.6], KEY='dc_anomali_state_v2';
 const $=id=>document.getElementById(id);
-let S={kat:'A',awal:{},adj:{},dirty:{},kode:KODE[0],beda:false,kodeKol:{}};
+let S={kat:'A',awal:{},adj:{},dirty:{},kode:KODE[0],beda:false,kodeKol:{},pakai28c:false};
 try{const r=sessionStorage.getItem(KEY); if(r) S=Object.assign(S,JSON.parse(r));}catch(e){}
 KOLOM.forEach(k=>{S.awal[k]=S.awal[k]||'';S.adj[k]=S.adj[k]||'';});
 
@@ -361,7 +362,7 @@ function hitung(t){
   const aset=g('28a')+g('28b');
   const u2=g('27a')-(g('26b')+g('26c')+g('26d'));
   const out=g('27a')-g('26c');
-  return {U2:u2,U3:out?u2/out:null,U4:aset?out/aset:null,U5:u2?g('26a')/u2:null};
+  return {U2:u2,OUT:out,U3:out?u2/out:null,U4:aset?out/aset:null,U5:u2?g('26a')/u2:null};
 }
 function stRasio(n,iv){
   if(iv===null) return ['na','➖ Tidak ada interval'];
@@ -370,10 +371,11 @@ function stRasio(n,iv){
   return (r>=iv[0]-1e-9&&r<=iv[1]+1e-9)?['ok','✅ Wajar']:['bad','❌ Tidak wajar'];
 }
 function evaluasi(h){
-  if(h===null) return [0,1,2,3].map(()=>({txt:'-',cls:'na',stat:'Belum diisi'}));
-  const iv=[null,KAT[S.kat],U4,U5], val=[h.U2,h.U3,h.U4,h.U5];
+  if(h===null) return [0,1,2,3,4].map(()=>({txt:'-',cls:'na',stat:'Belum diisi'}));
+  const iv=[null,null,KAT[S.kat],U4,U5], val=[h.U2,h.OUT,h.U3,h.U4,h.U5];
   return val.map((v,i)=>{
     if(i===0){const ok=v>=0; return {txt:fmtAngka(v),cls:ok?'ok':'bad',stat:ok?'✅ Wajar':'❌ Tidak wajar'};}
+    if(i===1) return {txt:fmtAngka(v),cls:'na',stat:'➖ Tanpa syarat'};
     const s=stRasio(v,iv[i]); return {txt:v===null?'-':fmtR(v),cls:s[0],stat:s[1]};
   });
 }
@@ -385,7 +387,7 @@ function delta(a,b,money){
 }
 
 // ---------- render ----------
-const NAMA_IND=['NTB [U2]','R_NTB/Output [U3]','R_Output/Aset [U4]','R_Upah/NTB [U5]'];
+const NAMA_IND=['NTB [U2]','Output','R_NTB/Output [U3]','R_Output/Aset [U4]','R_Upah/NTB [U5]'];
 function renderDeltaCols(){
   KOLOM.forEach(k=>{
     const e=$('x_'+k);
@@ -397,12 +399,12 @@ function renderDeltaCols(){
 function renderResult(){
   const hA=hitung(S.awal),hD=hitung(S.adj),eA=evaluasi(hA),eD=evaluasi(hD);
   const iv=KAT[S.kat];
-  const syarat=['≥ 0 (tidak negatif)',iv?fmtR(iv[0])+' – '+fmtR(iv[1]):'-',fmtR(U4[0])+' – '+fmtR(U4[1]),fmtR(U5[0])+' – '+fmtR(U5[1])];
-  const vA=hA?[hA.U2,hA.U3,hA.U4,hA.U5]:[null,null,null,null];
-  const vD=hD?[hD.U2,hD.U3,hD.U4,hD.U5]:[null,null,null,null];
+  const syarat=['≥ 0 (tidak negatif)','-',iv?fmtR(iv[0])+' – '+fmtR(iv[1]):'-',fmtR(U4[0])+' – '+fmtR(U4[1]),fmtR(U5[0])+' – '+fmtR(U5[1])];
+  const vA=hA?[hA.U2,hA.OUT,hA.U3,hA.U4,hA.U5]:[null,null,null,null,null];
+  const vD=hD?[hD.U2,hD.OUT,hD.U3,hD.U4,hD.U5]:[null,null,null,null,null];
   let h='';
-  for(let i=0;i<4;i++){
-    const d=delta(vA[i],vD[i],i===0);
+  for(let i=0;i<5;i++){
+    const d=delta(vA[i],vD[i],i<=1);
     h+=`<tr><td><b>${NAMA_IND[i]}</b></td><td>${syarat[i]}</td>
     <td class="num">${eA[i].txt}</td><td><span class="tag ${eA[i].cls}">${eA[i].stat}</span></td>
     <td class="num">${eD[i].txt}</td><td><span class="tag ${eD[i].cls}">${eD[i].stat}</span></td>
@@ -432,7 +434,7 @@ function copyText(t,btn){
   try{navigator.clipboard.writeText(t).then(done,fb);}catch(e){fb();}
 }
 function renderGen(){
-  const ch=KOLOM.filter(k=>S.awal[k]!==S.adj[k]);
+  const ch=KOLOM.filter(k=>S.awal[k]!==S.adj[k]&&(k!=='28c'||S.pakai28c));
   const box=$('gen'); box.innerHTML='';
   if(!ch.length){box.innerHTML='<div class="box na">Belum ada kolom yang berbeda antara Data Awal dan Adjustment.</div>';return;}
   const wrap=document.createElement('div');wrap.className='grid2';
@@ -450,7 +452,7 @@ function renderGen(){
 function buildKodeKol(){
   const c=$('kk');c.innerHTML='';
   if(!S.beda) return;
-  KOLOM.forEach(k=>{
+  KOLOM.filter(k=>k!=='28c'||S.pakai28c).forEach(k=>{
     const d=document.createElement('div');d.textContent=k;
     const s=document.createElement('select');
     KODE.forEach(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;s.appendChild(o);});
@@ -473,6 +475,7 @@ Object.keys(KAT).forEach(k=>{
 $('kat').value=S.kat; $('kat').onchange=()=>{S.kat=$('kat').value;update();};
 KODE.forEach(x=>{const o=document.createElement('option');o.value=x;o.textContent=x+' — '+KODE_DC[x];$('kode').appendChild(o);});
 $('kode').value=S.kode; $('kode').onchange=()=>{S.kode=$('kode').value;update();};
+$('p28c').checked=S.pakai28c; $('p28c').onchange=()=>{S.pakai28c=$('p28c').checked;buildKodeKol();update();};
 $('beda').checked=S.beda; $('beda').onchange=()=>{S.beda=$('beda').checked;buildKodeKol();update();};
 
 let rows='';
@@ -507,7 +510,7 @@ window.__S=()=>S;
 """
 
 
-TINGGI_ANOMALI = 1650  # piksel; jika isi lebih panjang, bisa digulir di dalam kotak
+TINGGI_ANOMALI = 1700  # piksel; jika isi lebih panjang, bisa digulir di dalam kotak
 
 
 def render_anomali():
@@ -592,8 +595,9 @@ with tab_anomali:
     with st.expander("Rumus & aturan kewajaran"):
         st.markdown(
             "- **NTB [U2]** = 27a − (26b + 26c + 26d) → wajar jika **tidak negatif**\n"
-            "- **R_NTB/Output [U3]** = NTB / (27a − 26c) → wajar jika berada pada interval kategori terpilih\n"
-            "- **R_Output/Aset [U4]** = (27a − 26c) / 28c, dengan **28c = 28a + 28b** → wajar jika **0,200 – 0,400**\n"
+            "- **Output** = 27a − 26c (ditampilkan tanpa syarat kewajaran)\n"
+            "- **R_NTB/Output [U3]** = NTB / Output → wajar jika berada pada interval kategori terpilih\n"
+            "- **R_Output/Aset [U4]** = Output / 28c, dengan **28c = 28a + 28b** → wajar jika **0,200 – 0,400**\n"
             "- **R_Upah/NTB [U5]** = 26a / NTB → wajar jika **0,400 – 0,600**\n\n"
             "Rasio dibulatkan ke 3 digit di belakang koma sebelum dicek terhadap interval. "
             "Titik = pemisah ribuan, koma = desimal."
