@@ -25,6 +25,11 @@ def format_nilai(teks: str) -> str:
     return teks
 
 
+def format_input(key: str):
+    """Callback: rapikan isi kolom input dengan pemisah ribuan setelah diisi."""
+    st.session_state[key] = format_nilai(st.session_state.get(key, ""))
+
+
 def generate(baris):
     hasil = []
     for b in baris:
@@ -37,9 +42,14 @@ def generate(baris):
         if b["kode"] == "#DC_00":
             hasil.append(f'{b["kode"]} isian {b["kolom"]} tetap {awal_txt}')
         else:
-            hasil.append(
-                f'{b["kode"]} memperbaiki isian {b["kolom"]} dari {awal_txt} menjadi {ubah_txt}'
-            )
+            if awal:
+                hasil.append(
+                    f'{b["kode"]} memperbaiki isian {b["kolom"]} dari {awal} menjadi {ubah_txt}'
+                )
+            else:
+                hasil.append(
+                    f'{b["kode"]} memperbaiki isian {b["kolom"]} menjadi {ubah_txt}'
+                )
     return hasil
 
 
@@ -67,8 +77,14 @@ baris = []
 for kol in KOLOM:
     c1, c2, c3 = st.columns([1, 1, 1])
     c1.markdown(f"**{kol}**")
-    awal = c2.text_input(f"Awal {kol}", key=f"awal_{kol}", label_visibility="collapsed")
-    ubah = c3.text_input(f"Perubahan {kol}", key=f"ubah_{kol}", label_visibility="collapsed")
+    awal = c2.text_input(
+        f"Awal {kol}", key=f"awal_{kol}", label_visibility="collapsed",
+        placeholder="mis. 500000", on_change=format_input, args=(f"awal_{kol}",),
+    )
+    ubah = c3.text_input(
+        f"Perubahan {kol}", key=f"ubah_{kol}", label_visibility="collapsed",
+        placeholder="mis. 50000", on_change=format_input, args=(f"ubah_{kol}",),
+    )
     kode = kode_global
     if beda_kode:
         kode = c1.selectbox(
