@@ -1,5 +1,6 @@
 import re
-import pandas as pd
+import json
+import streamlit.components.v1 as components
 import streamlit as st
 
 st.set_page_config(page_title="Generator DC & Anomali", page_icon="📝", layout="wide")
@@ -57,28 +58,6 @@ def format_nilai(teks: str) -> str:
     return teks
 
 
-def parse_angka(teks: str):
-    """Teks -> float, atau None bila kosong / bukan angka."""
-    bersih = (teks or "").strip().replace(".", "").replace(" ", "").replace(",", ".")
-    if not bersih:
-        return None
-    try:
-        return float(bersih)
-    except ValueError:
-        return None
-
-
-def fmt_angka(x: float) -> str:
-    if abs(x - round(x)) < 1e-9:
-        return f"{int(round(x)):,}".replace(",", ".")
-    s = f"{x:,.2f}"
-    return s.replace(",", "#").replace(".", ",").replace("#", ".")
-
-
-def fmt_rasio(x, desimal=3) -> str:
-    return f"{x:.{desimal}f}".replace(".", ",")
-
-
 def buat_kalimat(kode, kolom, awal, ubah, tampil_awal=True):
     awal = format_nilai(awal)
     ubah = format_nilai(ubah)
@@ -93,22 +72,10 @@ def buat_kalimat(kode, kolom, awal, ubah, tampil_awal=True):
 
 
 # ----------------------------------------------------------------------------
-# CALLBACK
+# CALLBACK (tab generator)
 # ----------------------------------------------------------------------------
 def cb_format(key: str):
     st.session_state[key] = format_nilai(st.session_state.get(key, ""))
-
-
-def cb_awal(kol: str):
-    """Format nilai awal, lalu autofill ke kolom adjustment."""
-    k = f"an_awal_{kol}"
-    st.session_state[k] = format_nilai(st.session_state.get(k, ""))
-    st.session_state[f"an_adj_{kol}"] = st.session_state[k]
-
-
-def cb_salin():
-    for kol in KOLOM:
-        st.session_state[f"an_adj_{kol}"] = st.session_state.get(f"an_awal_{kol}", "")
 
 
 def cb_reset_gen():
@@ -117,54 +84,313 @@ def cb_reset_gen():
         st.session_state[f"ubah_{kol}"] = ""
 
 
-def cb_reset_an():
-    for kol in KOLOM:
-        st.session_state[f"an_awal_{kol}"] = ""
-        st.session_state[f"an_adj_{kol}"] = ""
-
-
 # ----------------------------------------------------------------------------
-# PERHITUNGAN ANOMALI
+# TEMPLATE HTML/JS UNTUK TAB ANOMALI (perhitungan live saat mengetik)
 # ----------------------------------------------------------------------------
-def hitung(teks_per_kolom: dict):
-    """Kembalikan dict U2..U5 (None bila semua kolom kosong)."""
-    v = {k: parse_angka(t) for k, t in teks_per_kolom.items()}
-    if all(x is None for x in v.values()):
-        return None
-    g = lambda k: v[k] or 0.0
-    u2 = g("27a") - (g("26b") + g("26c") + g("26d"))
-    output = g("27a") - g("26c")
-    return {
-        "U2": u2,
-        "U3": u2 / output if output else None,
-        "U4": output / g("28c") if g("28c") else None,
-        "U5": g("26a") / u2 if u2 else None,
-    }
+HTML_ANOMALI = r"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+:root{--fg:#1f2430;--muted:#6b7280;--line:#e5e7eb;--card:#f3f4f6;--input:#fff;
+--ok:#15803d;--okbg:#dcfce7;--bad:#b91c1c;--badbg:#fee2e2;--warn:#b45309;--warnbg:#fef3c7;
+--up:#1d4ed8;--down:#c2410c;--btn:#e5e7eb}
+:root.dark{--fg:#e5e7eb;--muted:#9ca3af;--line:#374151;--card:#1f2937;--input:#111827;
+--ok:#4ade80;--okbg:#14532d;--bad:#fca5a5;--badbg:#7f1d1d;--warn:#fcd34d;--warnbg:#78350f;
+--up:#93c5fd;--down:#fdba74;--btn:#374151}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Source Sans Pro",system-ui,-apple-system,Segoe UI,sans-serif;color:var(--fg);font-size:15px;background:transparent}
+#app{padding:4px 2px 16px}
+h3{margin:22px 0 8px;font-size:18px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:6px 8px;text-align:left;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:13px;color:var(--muted);font-weight:600}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+input[type=text],select{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--input);color:var(--fg);font:inherit}
+input[type=text]{text-align:right}
+select{width:auto;min-width:260px}
+#cari{flex:1;min-width:240px;text-align:left}
+.small{font-size:12px;color:var(--muted)}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:6px 0}
+button{padding:7px 12px;border:1px solid var(--line);border-radius:6px;background:var(--btn);color:var(--fg);font:inherit;cursor:pointer}
+button:hover{filter:brightness(1.08)}
+.tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:13px;white-space:nowrap}
+.ok{background:var(--okbg);color:var(--ok)}.bad{background:var(--badbg);color:var(--bad)}
+.warn{background:var(--warnbg);color:var(--warn)}.na{background:var(--card);color:var(--muted)}
+.up{color:var(--up);font-weight:600}.down{color:var(--down);font-weight:600}.zero{color:var(--muted)}
+.box{padding:10px 12px;border-radius:8px;margin:6px 0}
+pre{margin:4px 0;padding:10px 12px;background:var(--card);border-radius:8px;white-space:pre-wrap;word-break:break-word;font-size:14px;min-height:20px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:800px){.grid2{grid-template-columns:1fr}}
+.kk{display:flex;gap:8px;flex-wrap:wrap}.kk div{display:flex;flex-direction:column;font-size:12px;color:var(--muted)}
+.kk select{min-width:90px}
+</style></head>
+<body><div id="app">
+<div class="row"><b>🔎 Cari fenomena</b>
+<input type="text" id="cari" autocomplete="off" placeholder="mis. berapa harga barang fotocopy aset 1">
+<button id="cariBtn">Cari di Google</button></div>
+<div id="cariInfo" class="small"></div>
+<div class="row"><b>Kategori kewajaran</b><select id="kat"></select></div>
+<table>
+<thead><tr><th>Kolom</th><th>Perhitungan Data Awal</th><th>Perhitungan Data Adjustment</th><th class="num">Perubahan (Adj &minus; Awal)</th></tr></thead>
+<tbody id="inbody"></tbody></table>
+<div class="row"><button id="salin">↩️ Samakan adjustment dengan data awal</button><button id="reset">🗑️ Reset semua isian</button></div>
+<div class="small">Adjustment otomatis mengikuti Data Awal selama belum Anda ubah sendiri. Semua hasil dihitung langsung saat mengetik.</div>
+
+<h3>Hasil perhitungan &amp; cek kewajaran (live)</h3>
+<table><thead><tr><th>Indikator</th><th>Syarat wajar</th><th class="num">Data Awal</th><th>Status Awal</th><th class="num">Data Adjustment</th><th>Status Adjustment</th><th class="num">Perubahan</th></tr></thead>
+<tbody id="res"></tbody></table>
+<div id="ringkas"></div>
+
+<h3>Generate kalimat perbaikan</h3>
+<div class="small">Kalimat dibuat hanya untuk kolom yang nilainya berbeda antara Data Awal dan Adjustment.</div>
+<div class="row"><b>Kode DC</b><select id="kode"></select>
+<label><input type="checkbox" id="beda"> Pakai kode DC berbeda untuk tiap kolom</label></div>
+<div id="kk" class="kk"></div>
+<div id="gen"></div>
+</div>
+<script>
+(function(){
+const KOLOM=__KOLOM__, NAMA=__NAMA__, KAT=__KAT__, KODE=__KODE__, KODE_DC=__KODE_DC__;
+const U4=[0.2,0.4], U5=[0.4,0.6], KEY='dc_anomali_state_v1';
+const $=id=>document.getElementById(id);
+let S={kat:'A',awal:{},adj:{},dirty:{},kode:KODE[0],beda:false,kodeKol:{},cari:''};
+try{const r=sessionStorage.getItem(KEY); if(r) S=Object.assign(S,JSON.parse(r));}catch(e){}
+KOLOM.forEach(k=>{S.awal[k]=S.awal[k]||'';S.adj[k]=S.adj[k]||'';});
+
+// ---------- tema ----------
+function detectDark(){
+  try{
+    const el=window.parent.document.querySelector('.stApp')||window.parent.document.body;
+    const m=getComputedStyle(el).backgroundColor.match(/[\d.]+/g);
+    if(m&&!(m.length>=4&&parseFloat(m[3])===0)) return (0.299*m[0]+0.587*m[1]+0.114*m[2])<128;
+  }catch(e){}
+  try{return window.matchMedia('(prefers-color-scheme: dark)').matches;}catch(e){}
+  return false;
+}
+if(detectDark()) document.documentElement.classList.add('dark');
+
+// ---------- format & parse ----------
+function ribuan(s){return s.replace(/\B(?=(\d{3})+(?!\d))/g,'.');}
+function fmtText(raw){
+  raw=(raw||'').trim(); if(!raw) return '';
+  const neg=raw[0]==='-';
+  const s=raw.replace(/[^\d,]/g,'');
+  const i=s.indexOf(',');
+  let int=i<0?s:s.slice(0,i);
+  const dec=i<0?null:s.slice(i+1).replace(/,/g,'');
+  int=int.replace(/^0+(?=\d)/,'');
+  if(int===''&&dec!==null) int='0';
+  return (neg?'-':'')+ribuan(int)+(dec!==null?','+dec:'');
+}
+function liveFormat(el){
+  const raw=el.value, pos=el.selectionStart==null?raw.length:el.selectionStart;
+  const n=raw.slice(0,pos).replace(/[^\d,\-]/g,'').length;
+  const f=fmtText(raw);
+  el.value=f;
+  let c=0,p=0;
+  while(p<f.length&&c<n){ if(/[\d,\-]/.test(f[p])) c++; p++; }
+  try{el.setSelectionRange(p,p);}catch(e){}
+  return f;
+}
+function parse(s){
+  if(!s) return null;
+  const t=s.replace(/\./g,'').replace(',','.');
+  if(t===''||t==='-') return null;
+  const n=Number(t); return isNaN(n)?null:n;
+}
+function fmtAngka(x){
+  if(Math.abs(x)<1e-9) return '0';
+  const neg=x<0,a=Math.abs(x);
+  if(Math.abs(a-Math.round(a))<1e-9) return (neg?'-':'')+ribuan(String(Math.round(a)));
+  const p=a.toFixed(2).split('.'); return (neg?'-':'')+ribuan(p[0])+','+p[1];
+}
+function fmtR(x){return x.toFixed(3).replace('.',',');}
+function nz(x){return x===null?0:x;}
+
+// ---------- perhitungan ----------
+function hitung(t){
+  const v={};let all=true;
+  KOLOM.forEach(k=>{v[k]=parse(t[k]); if(v[k]!==null) all=false;});
+  if(all) return null;
+  const g=k=>nz(v[k]);
+  const u2=g('27a')-(g('26b')+g('26c')+g('26d'));
+  const out=g('27a')-g('26c');
+  return {U2:u2,U3:out?u2/out:null,U4:g('28c')?out/g('28c'):null,U5:u2?g('26a')/u2:null};
+}
+function stRasio(n,iv){
+  if(iv===null) return ['na','➖ Tidak ada interval'];
+  if(n===null) return ['warn','⚠️ Tidak dapat dihitung'];
+  const r=Math.round(n*1000)/1000;
+  return (r>=iv[0]-1e-9&&r<=iv[1]+1e-9)?['ok','✅ Wajar']:['bad','❌ Tidak wajar'];
+}
+function evaluasi(h){
+  if(h===null) return [0,1,2,3].map(()=>({txt:'-',cls:'na',stat:'Belum diisi'}));
+  const iv=[null,KAT[S.kat],U4,U5], val=[h.U2,h.U3,h.U4,h.U5];
+  return val.map((v,i)=>{
+    if(i===0){const ok=v>=0; return {txt:fmtAngka(v),cls:ok?'ok':'bad',stat:ok?'✅ Wajar':'❌ Tidak wajar'};}
+    const s=stRasio(v,iv[i]); return {txt:v===null?'-':fmtR(v),cls:s[0],stat:s[1]};
+  });
+}
+function delta(a,b,money){
+  if(a===null||b===null) return {t:'-',c:'zero'};
+  let d=b-a; if(!money) d=Math.round(d*1000)/1000;
+  if(Math.abs(d)<1e-9) return {t:'0',c:'zero'};
+  return {t:(d>0?'+':'−')+(money?fmtAngka(Math.abs(d)):fmtR(Math.abs(d))),c:d>0?'up':'down'};
+}
+
+// ---------- render ----------
+const NAMA_IND=['NTB [U2]','R_NTB/Output [U3]','R_Output/Aset [U4]','R_Upah/NTB [U5]'];
+function renderDeltaCols(){
+  KOLOM.forEach(k=>{
+    const e=$('x_'+k);
+    if(!S.awal[k]&&!S.adj[k]){e.textContent='';e.className='';return;}
+    const d=delta(nz(parse(S.awal[k])),nz(parse(S.adj[k])),true);
+    e.textContent=d.t; e.className=d.c;
+  });
+}
+function renderResult(){
+  const hA=hitung(S.awal),hD=hitung(S.adj),eA=evaluasi(hA),eD=evaluasi(hD);
+  const iv=KAT[S.kat];
+  const syarat=['≥ 0 (tidak negatif)',iv?fmtR(iv[0])+' – '+fmtR(iv[1]):'-',fmtR(U4[0])+' – '+fmtR(U4[1]),fmtR(U5[0])+' – '+fmtR(U5[1])];
+  const vA=hA?[hA.U2,hA.U3,hA.U4,hA.U5]:[null,null,null,null];
+  const vD=hD?[hD.U2,hD.U3,hD.U4,hD.U5]:[null,null,null,null];
+  let h='';
+  for(let i=0;i<4;i++){
+    const d=delta(vA[i],vD[i],i===0);
+    h+=`<tr><td><b>${NAMA_IND[i]}</b></td><td>${syarat[i]}</td>
+    <td class="num">${eA[i].txt}</td><td><span class="tag ${eA[i].cls}">${eA[i].stat}</span></td>
+    <td class="num">${eD[i].txt}</td><td><span class="tag ${eD[i].cls}">${eD[i].stat}</span></td>
+    <td class="num ${d.c}">${d.t}</td></tr>`;
+  }
+  $('res').innerHTML=h;
+  let r='';
+  [['Data Awal',eA],['Data Adjustment',eD]].forEach(([j,ev])=>{
+    if(ev.every(e=>e.stat==='Belum diisi')) return;
+    const bad=ev.map((e,i)=>(e.cls==='bad'||e.cls==='warn')?NAMA_IND[i]:null).filter(Boolean);
+    r+=bad.length?`<div class="box warn">${j}: perlu dicek → ${bad.join(', ')}</div>`
+                 :`<div class="box ok">${j}: semua indikator wajar ✅</div>`;
+  });
+  $('ringkas').innerHTML=r;
+}
+function kodeFor(k){return S.beda?(S.kodeKol[k]||S.kode):S.kode;}
+function kalimat(kode,kol,awal,ubah,tampil){
+  if(!awal&&!ubah) return null;
+  const u=ubah||'kosong';
+  if(tampil&&awal) return `${kode} memperbaiki isian ${kol} dari ${awal} menjadi ${u}`;
+  return `${kode} memperbaiki isian ${kol} menjadi ${u}`;
+}
+function copyText(t,btn){
+  const done=()=>{const o=btn.textContent;btn.textContent='Tersalin ✓';setTimeout(()=>btn.textContent=o,1200);};
+  const fb=()=>{const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();
+    try{document.execCommand('copy');done();}catch(e){}document.body.removeChild(ta);};
+  try{navigator.clipboard.writeText(t).then(done,fb);}catch(e){fb();}
+}
+function renderGen(){
+  const ch=KOLOM.filter(k=>S.awal[k]!==S.adj[k]);
+  const box=$('gen'); box.innerHTML='';
+  if(!ch.length){box.innerHTML='<div class="box na">Belum ada kolom yang berbeda antara Data Awal dan Adjustment.</div>';return;}
+  const wrap=document.createElement('div');wrap.className='grid2';
+  [['Gaya 1 — dengan nilai awal',true],['Gaya 2 — tanpa nilai awal',false]].forEach(([jd,tampil])=>{
+    const t=ch.map(k=>kalimat(kodeFor(k),k,S.awal[k],S.adj[k],tampil)).filter(Boolean).join('\n');
+    const d=document.createElement('div');
+    const head=document.createElement('div');head.className='row';
+    head.innerHTML='<b></b>';head.firstChild.textContent=jd;
+    const b=document.createElement('button');b.textContent='Salin';b.onclick=()=>copyText(t,b);head.appendChild(b);
+    const pre=document.createElement('pre');pre.textContent=t;
+    d.appendChild(head);d.appendChild(pre);wrap.appendChild(d);
+  });
+  box.appendChild(wrap);
+}
+function buildKodeKol(){
+  const c=$('kk');c.innerHTML='';
+  if(!S.beda) return;
+  KOLOM.forEach(k=>{
+    const d=document.createElement('div');d.textContent=k;
+    const s=document.createElement('select');
+    KODE.forEach(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;s.appendChild(o);});
+    s.value=kodeFor(k);
+    s.onchange=()=>{S.kodeKol[k]=s.value;update();};
+    d.appendChild(s);c.appendChild(d);
+  });
+}
+function save(){try{sessionStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
+function fit(){
+  try{const h=$('app').offsetHeight+24;window.frameElement.style.height=h+'px';window.frameElement.height=h;}catch(e){}
+}
+function update(){renderDeltaCols();renderResult();renderGen();save();fit();}
+
+// ---------- init ----------
+Object.keys(KAT).forEach(k=>{
+  const o=document.createElement('option');o.value=k;
+  const iv=KAT[k];
+  o.textContent='Kategori '+k+' ('+(iv?fmtR(iv[0]).slice(0,4)+' – '+fmtR(iv[1]).slice(0,4):'-')+')';
+  $('kat').appendChild(o);
+});
+$('kat').value=S.kat; $('kat').onchange=()=>{S.kat=$('kat').value;update();};
+KODE.forEach(x=>{const o=document.createElement('option');o.value=x;o.textContent=x+' — '+KODE_DC[x];$('kode').appendChild(o);});
+$('kode').value=S.kode; $('kode').onchange=()=>{S.kode=$('kode').value;update();};
+$('beda').checked=S.beda; $('beda').onchange=()=>{S.beda=$('beda').checked;buildKodeKol();update();};
+
+let rows='';
+KOLOM.forEach(k=>{
+  rows+=`<tr><td><b>${k}</b> ${NAMA[k]}</td>
+  <td><input type="text" id="a_${k}" inputmode="decimal" autocomplete="off" placeholder="0"></td>
+  <td><input type="text" id="d_${k}" inputmode="decimal" autocomplete="off" placeholder="0"></td>
+  <td class="num"><span id="x_${k}"></span></td></tr>`;
+});
+$('inbody').innerHTML=rows;
+KOLOM.forEach(k=>{
+  const a=$('a_'+k),d=$('d_'+k);
+  a.value=S.awal[k]; d.value=S.adj[k];
+  a.addEventListener('input',()=>{
+    S.awal[k]=liveFormat(a);
+    if(!S.dirty[k]){S.adj[k]=S.awal[k];d.value=S.adj[k];}
+    update();
+  });
+  d.addEventListener('input',()=>{
+    S.adj[k]=liveFormat(d);
+    S.dirty[k]=(S.adj[k]!==S.awal[k]);
+    update();
+  });
+});
+$('salin').onclick=()=>{KOLOM.forEach(k=>{S.adj[k]=S.awal[k];S.dirty[k]=false;$('d_'+k).value=S.adj[k];});update();};
+$('reset').onclick=()=>{KOLOM.forEach(k=>{S.awal[k]='';S.adj[k]='';S.dirty[k]=false;$('a_'+k).value='';$('d_'+k).value='';});update();};
+$('cari').value=S.cari||'';
+function cariGoogle(){
+  const q=$('cari').value.trim(), info=$('cariInfo');
+  info.textContent='';
+  if(!q){info.textContent='Ketik kata kunci pencarian dulu.';fit();return;}
+  const url='https://www.google.com/search?hl=id&q='+encodeURIComponent(q);
+  const w=window.open(url,'_blank');
+  if(w){try{w.opener=null;}catch(e){}}
+  else{
+    info.textContent='Pop-up diblokir browser. ';
+    const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener noreferrer';
+    a.textContent='Klik di sini untuk membuka hasil pencarian';info.appendChild(a);
+  }
+  fit();
+}
+$('cari').addEventListener('input',()=>{S.cari=$('cari').value;save();});
+$('cari').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();cariGoogle();}});
+$('cariBtn').onclick=cariGoogle;
+buildKodeKol(); update();
+window.__S=()=>S;
+})();
+</script></body></html>
+"""
 
 
-def status_rasio(nilai, interval):
-    if interval is None:
-        return "➖ Tidak ada interval"
-    if nilai is None:
-        return "⚠️ Tidak dapat dihitung"
-    lo, hi = interval
-    r = round(nilai, 3)  # 3 digit di belakang koma
-    return "✅ Wajar" if lo - 1e-9 <= r <= hi + 1e-9 else "❌ Tidak wajar"
-
-
-def status_u2(nilai):
-    return "✅ Wajar" if nilai >= 0 else "❌ Tidak wajar"
-
-
-def evaluasi(hasil, interval_u3):
-    """Kembalikan list (nilai_teks, status) untuk U2..U5."""
-    if hasil is None:
-        return [("-", "Belum diisi")] * 4
-    out = [(fmt_angka(hasil["U2"]), status_u2(hasil["U2"]))]
-    for kunci, interval in (("U3", interval_u3), ("U4", INTERVAL_U4), ("U5", INTERVAL_U5)):
-        n = hasil[kunci]
-        out.append((fmt_rasio(n) if n is not None else "-", status_rasio(n, interval)))
-    return out
+def render_anomali():
+    isi = (
+        HTML_ANOMALI.replace("__KOLOM__", json.dumps(KOLOM))
+        .replace("__NAMA__", json.dumps(NAMA_KOLOM, ensure_ascii=False))
+        .replace("__KAT__", json.dumps(KATEGORI))
+        .replace("__KODE__", json.dumps(KODE_UBAH))
+        .replace("__KODE_DC__", json.dumps(KODE_DC, ensure_ascii=False))
+    )
+    if hasattr(st, "iframe"):  # Streamlit versi baru
+        st.iframe(isi, height="content")
+    else:  # Streamlit versi lama
+        components.html(isi, height=1300, scrolling=True)
 
 
 # ----------------------------------------------------------------------------
@@ -231,132 +457,13 @@ with tab_gen:
 
 # ======================== TAB 2: PERHITUNGAN ANOMALI ========================
 with tab_anomali:
-    st.caption(
-        "Isi Data Awal, kolom Adjustment otomatis terisi sama dan bisa diubah sampai hasilnya wajar."
-    )
-
     with st.expander("Rumus & aturan kewajaran"):
         st.markdown(
             "- **NTB [U2]** = 27a − (26b + 26c + 26d) → wajar jika **tidak negatif**\n"
             "- **R_NTB/Output [U3]** = NTB / (27a − 26c) → wajar jika berada pada interval kategori terpilih\n"
             "- **R_Output/Aset [U4]** = (27a − 26c) / 28c → wajar jika **0,200 – 0,400**\n"
             "- **R_Upah/NTB [U5]** = 26a / NTB → wajar jika **0,400 – 0,600**\n\n"
-            "Rasio dibulatkan ke 3 digit di belakang koma sebelum dicek terhadap interval."
+            "Rasio dibulatkan ke 3 digit di belakang koma sebelum dicek terhadap interval. "
+            "Titik = pemisah ribuan, koma = desimal."
         )
-
-    def label_kategori(k):
-        iv = KATEGORI[k]
-        rentang = "-" if iv is None else f"{fmt_rasio(iv[0], 2)} – {fmt_rasio(iv[1], 2)}"
-        return f"Kategori {k} ({rentang})"
-
-    kategori = st.selectbox(
-        "Kategori kewajaran", list(KATEGORI.keys()), format_func=label_kategori, key="an_kategori"
-    )
-    interval_u3 = KATEGORI[kategori]
-
-    st.markdown("---")
-    h1, h2, h3 = st.columns([2, 1.5, 1.5])
-    h1.markdown("**Kolom**")
-    h2.markdown("**Perhitungan Data Awal**")
-    h3.markdown("**Perhitungan Data Adjustment**")
-
-    teks_awal, teks_adj = {}, {}
-    for kol in KOLOM:
-        c1, c2, c3 = st.columns([2, 1.5, 1.5])
-        c1.markdown(f"**{kol}** {NAMA_KOLOM[kol]}")
-        teks_awal[kol] = c2.text_input(
-            f"Awal {kol}", key=f"an_awal_{kol}", label_visibility="collapsed",
-            placeholder="0", on_change=cb_awal, args=(kol,),
-        )
-        teks_adj[kol] = c3.text_input(
-            f"Adjustment {kol}", key=f"an_adj_{kol}", label_visibility="collapsed",
-            placeholder="0", on_change=cb_format, args=(f"an_adj_{kol}",),
-        )
-
-    b1, b2, _ = st.columns([1.5, 1.5, 4])
-    b1.button("↩️ Samakan adjustment dengan data awal", on_click=cb_salin, key="an_salin")
-    b2.button("🗑️ Reset semua isian", on_click=cb_reset_an, key="an_reset")
-
-    # teks yang tidak bisa dibaca sebagai angka
-    salah = [
-        f"{kol} ({jenis})"
-        for jenis, d in (("awal", teks_awal), ("adjustment", teks_adj))
-        for kol, t in d.items()
-        if t.strip() and parse_angka(t) is None
-    ]
-    if salah:
-        st.warning("Isian bukan angka, dianggap kosong: " + ", ".join(salah))
-
-    # ---- Hitung & cek kewajaran ----
-    st.markdown("---")
-    st.subheader("Hasil perhitungan & cek kewajaran")
-    ev_awal = evaluasi(hitung(teks_awal), interval_u3)
-    ev_adj = evaluasi(hitung(teks_adj), interval_u3)
-
-    nama_ind = ["NTB [U2]", "R_NTB/Output [U3]", "R_Output/Aset [U4]", "R_Upah/NTB [U5]"]
-    syarat = [
-        "≥ 0 (tidak negatif)",
-        "-" if interval_u3 is None else f"{fmt_rasio(interval_u3[0])} – {fmt_rasio(interval_u3[1])}",
-        f"{fmt_rasio(INTERVAL_U4[0])} – {fmt_rasio(INTERVAL_U4[1])}",
-        f"{fmt_rasio(INTERVAL_U5[0])} – {fmt_rasio(INTERVAL_U5[1])}",
-    ]
-    df = pd.DataFrame(
-        {
-            "Indikator": nama_ind,
-            "Syarat wajar": syarat,
-            "Data Awal": [e[0] for e in ev_awal],
-            "Status Awal": [e[1] for e in ev_awal],
-            "Data Adjustment": [e[0] for e in ev_adj],
-            "Status Adjustment": [e[1] for e in ev_adj],
-        }
-    ).set_index("Indikator")
-    st.table(df)
-
-    def ringkas(judul, ev):
-        if all(e[1] == "Belum diisi" for e in ev):
-            return
-        bermasalah = [
-            nama_ind[i] for i, e in enumerate(ev) if e[1].startswith(("❌", "⚠️"))
-        ]
-        if bermasalah:
-            st.warning(f"{judul}: perlu dicek → " + ", ".join(bermasalah))
-        else:
-            st.success(f"{judul}: semua indikator wajar ✅")
-
-    ringkas("Data Awal", ev_awal)
-    ringkas("Data Adjustment", ev_adj)
-
-    # ---- Generate kalimat ----
-    st.markdown("---")
-    st.subheader("Generate kalimat perbaikan")
-    st.caption("Kalimat dibuat hanya untuk kolom yang nilainya berbeda antara Data Awal dan Adjustment.")
-
-    kode_an = st.selectbox(
-        "Kode DC", KODE_UBAH, format_func=lambda k: f"{k} — {KODE_DC[k]}", key="an_kode_global"
-    )
-    beda_an = st.checkbox("Pakai kode DC berbeda untuk tiap kolom", key="an_beda_kode")
-    kode_kolom = {kol: kode_an for kol in KOLOM}
-    if beda_an:
-        cols = st.columns(len(KOLOM))
-        for c, kol in zip(cols, KOLOM):
-            kode_kolom[kol] = c.selectbox(
-                kol, KODE_UBAH, index=KODE_UBAH.index(kode_an), key=f"an_kode_{kol}"
-            )
-
-    berubah = [
-        kol for kol in KOLOM
-        if format_nilai(teks_awal[kol]) != format_nilai(teks_adj[kol])
-    ]
-
-    if berubah:
-        gaya1 = [buat_kalimat(kode_kolom[k], k, teks_awal[k], teks_adj[k], True) for k in berubah]
-        gaya2 = [buat_kalimat(kode_kolom[k], k, teks_awal[k], teks_adj[k], False) for k in berubah]
-        g1, g2 = st.columns(2)
-        with g1:
-            st.markdown("**Gaya 1 — dengan nilai awal**")
-            st.code("\n".join(s for s in gaya1 if s), language=None)
-        with g2:
-            st.markdown("**Gaya 2 — tanpa nilai awal**")
-            st.code("\n".join(s for s in gaya2 if s), language=None)
-    else:
-        st.info("Belum ada kolom yang berbeda antara Data Awal dan Adjustment.")
+    render_anomali()
