@@ -448,9 +448,7 @@ function buildKodeKol(){
   });
 }
 function save(){try{sessionStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
-function fit(){
-  try{const h=$('app').offsetHeight+24;window.frameElement.style.height=h+'px';window.frameElement.height=h;}catch(e){}
-}
+function fit(){}  // tinggi iframe diatur tetap dari sisi Python
 function update(){renderDeltaCols();renderResult();renderGen();save();fit();}
 
 // ---------- init ----------
@@ -496,6 +494,9 @@ window.__S=()=>S;
 """
 
 
+TINGGI_ANOMALI = 1500  # piksel; jika isi lebih panjang, bisa digulir di dalam kotak
+
+
 def render_anomali():
     isi = (
         HTML_ANOMALI.replace("__KOLOM__", json.dumps(KOLOM))
@@ -505,9 +506,9 @@ def render_anomali():
         .replace("__KODE_DC__", json.dumps(KODE_DC, ensure_ascii=False))
     )
     if hasattr(st, "iframe"):  # Streamlit versi baru
-        st.iframe(isi, height="content")
+        st.iframe(isi, height=TINGGI_ANOMALI)
     else:  # Streamlit versi lama
-        components.html(isi, height=1300, scrolling=True)
+        components.html(isi, height=TINGGI_ANOMALI, scrolling=True)
 
 
 # ----------------------------------------------------------------------------
