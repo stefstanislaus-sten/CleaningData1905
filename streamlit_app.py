@@ -538,7 +538,7 @@ function renderGen(){
   const box=$('gen'); box.innerHTML='';
   if(!ch.length){box.innerHTML='<div class="box na">Belum ada kolom yang berbeda antara Data Awal dan Adjustment.</div>';return;}
   const wrap=document.createElement('div');wrap.className='grid2';
-  [['Gaya 1 — dengan nilai awal',true],['Gaya 2 — tanpa nilai awal',false]].forEach(([jd,tampil])=>{
+  [['PRIBADI — dengan nilai awal',true],['FASIH/KONFIRMASI — tanpa nilai awal',false]].forEach(([jd,tampil])=>{
     const t=ch.map(k=>kalimat(kodeFor(k),k,S.awal[k],S.adj[k],tampil)).filter(Boolean).join('\n');
     const d=document.createElement('div');
     const head=document.createElement('div');head.className='row';
