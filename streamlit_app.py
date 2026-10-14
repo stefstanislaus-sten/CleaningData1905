@@ -21,14 +21,16 @@ KODE_DC = {
 }
 KODE_UBAH = [k for k in KODE_DC if k != "#DC_00"]  # untuk menu anomali (ada perubahan)
 
-KOLOM = ["26a", "26b", "26c", "26d", "27a", "28c"]
+KOLOM = ["26a", "26b", "26c", "26d", "27a", "28a", "28b", "28c"]
 NAMA_KOLOM = {
     "26a": "Upah",
     "26b": "Biaya produksi",
     "26c": "Biaya pembelian barang yang terjual",
     "26d": "Biaya operasional (air, listrik, gas, internet, pulsa, pemeliharaan, biaya angkutan, dll.)",
     "27a": "Nilai pendapatan barang dan jasa",
-    "28c": "Nilai total aset",
+    "28a": "Nilai aset tanah dan bangunan",
+    "28b": "Nilai aset selain tanah dan bangunan",
+    "28c": "Nilai total aset (28a + 28b)",
 }
 
 # Interval kewajaran R_NTB/Output [U3] per kategori (None = tidak ada interval)
@@ -248,6 +250,7 @@ select{max-width:100%}
 .scroll{width:100%;overflow-x:auto}
 @media(max-width:520px){select{min-width:0;width:100%}}
 .small{font-size:12px;color:var(--muted)}
+input.ro{background:var(--card);font-weight:600;cursor:default}
 .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:6px 0}
 button{padding:7px 12px;border:1px solid var(--line);border-radius:6px;background:var(--btn);color:var(--fg);font:inherit;cursor:pointer}
 button:hover{filter:brightness(1.08)}
@@ -285,7 +288,7 @@ pre{margin:4px 0;padding:10px 12px;background:var(--card);border-radius:8px;whit
 <script>
 (function(){
 const KOLOM=__KOLOM__, NAMA=__NAMA__, KAT=__KAT__, KODE=__KODE__, KODE_DC=__KODE_DC__;
-const U4=[0.2,0.4], U5=[0.4,0.6], KEY='dc_anomali_state_v1';
+const U4=[0.2,0.4], U5=[0.4,0.6], KEY='dc_anomali_state_v2';
 const $=id=>document.getElementById(id);
 let S={kat:'A',awal:{},adj:{},dirty:{},kode:KODE[0],beda:false,kodeKol:{}};
 try{const r=sessionStorage.getItem(KEY); if(r) S=Object.assign(S,JSON.parse(r));}catch(e){}
@@ -342,14 +345,23 @@ function fmtR(x){return x.toFixed(3).replace('.',',');}
 function nz(x){return x===null?0:x;}
 
 // ---------- perhitungan ----------
+function totalAset(t){
+  const a=parse(t['28a']),b=parse(t['28b']);
+  return (a===null&&b===null)?'':fmtAngka(nz(a)+nz(b));
+}
+function syncTotal(){  // 28c = 28a + 28b (otomatis)
+  S.awal['28c']=totalAset(S.awal); S.adj['28c']=totalAset(S.adj);
+  $('a_28c').value=S.awal['28c']; $('d_28c').value=S.adj['28c'];
+}
 function hitung(t){
   const v={};let all=true;
-  KOLOM.forEach(k=>{v[k]=parse(t[k]); if(v[k]!==null) all=false;});
+  KOLOM.forEach(k=>{v[k]=parse(t[k]); if(k!=='28c'&&v[k]!==null) all=false;});
   if(all) return null;
   const g=k=>nz(v[k]);
+  const aset=g('28a')+g('28b');
   const u2=g('27a')-(g('26b')+g('26c')+g('26d'));
   const out=g('27a')-g('26c');
-  return {U2:u2,U3:out?u2/out:null,U4:g('28c')?out/g('28c'):null,U5:u2?g('26a')/u2:null};
+  return {U2:u2,U3:out?u2/out:null,U4:aset?out/aset:null,U5:u2?g('26a')/u2:null};
 }
 function stRasio(n,iv){
   if(iv===null) return ['na','➖ Tidak ada interval'];
@@ -466,35 +478,36 @@ $('beda').checked=S.beda; $('beda').onchange=()=>{S.beda=$('beda').checked;build
 let rows='';
 KOLOM.forEach(k=>{
   rows+=`<tr><td><b>${k}</b> ${NAMA[k]}</td>
-  <td><input type="text" id="a_${k}" inputmode="decimal" autocomplete="off" placeholder="0"></td>
-  <td><input type="text" id="d_${k}" inputmode="decimal" autocomplete="off" placeholder="0"></td>
+  <td><input type="text" id="a_${k}" inputmode="decimal" autocomplete="off" placeholder="0"${k==='28c'?' readonly tabindex="-1" class="ro"':''}></td>
+  <td><input type="text" id="d_${k}" inputmode="decimal" autocomplete="off" placeholder="0"${k==='28c'?' readonly tabindex="-1" class="ro"':''}></td>
   <td class="num"><span id="x_${k}"></span></td></tr>`;
 });
 $('inbody').innerHTML=rows;
 KOLOM.forEach(k=>{
   const a=$('a_'+k),d=$('d_'+k);
   a.value=S.awal[k]; d.value=S.adj[k];
+  if(k==='28c') return;  // total otomatis, tidak diketik
   a.addEventListener('input',()=>{
     S.awal[k]=liveFormat(a);
     if(!S.dirty[k]){S.adj[k]=S.awal[k];d.value=S.adj[k];}
-    update();
+    syncTotal(); update();
   });
   d.addEventListener('input',()=>{
     S.adj[k]=liveFormat(d);
     S.dirty[k]=(S.adj[k]!==S.awal[k]);
-    update();
+    syncTotal(); update();
   });
 });
-$('salin').onclick=()=>{KOLOM.forEach(k=>{S.adj[k]=S.awal[k];S.dirty[k]=false;$('d_'+k).value=S.adj[k];});update();};
-$('reset').onclick=()=>{KOLOM.forEach(k=>{S.awal[k]='';S.adj[k]='';S.dirty[k]=false;$('a_'+k).value='';$('d_'+k).value='';});update();};
-buildKodeKol(); update();
+$('salin').onclick=()=>{KOLOM.forEach(k=>{S.adj[k]=S.awal[k];S.dirty[k]=false;$('d_'+k).value=S.adj[k];});syncTotal();update();};
+$('reset').onclick=()=>{KOLOM.forEach(k=>{S.awal[k]='';S.adj[k]='';S.dirty[k]=false;$('a_'+k).value='';$('d_'+k).value='';});syncTotal();update();};
+buildKodeKol(); syncTotal(); update();
 window.__S=()=>S;
 })();
 </script></body></html>
 """
 
 
-TINGGI_ANOMALI = 1500  # piksel; jika isi lebih panjang, bisa digulir di dalam kotak
+TINGGI_ANOMALI = 1650  # piksel; jika isi lebih panjang, bisa digulir di dalam kotak
 
 
 def render_anomali():
@@ -580,7 +593,7 @@ with tab_anomali:
         st.markdown(
             "- **NTB [U2]** = 27a − (26b + 26c + 26d) → wajar jika **tidak negatif**\n"
             "- **R_NTB/Output [U3]** = NTB / (27a − 26c) → wajar jika berada pada interval kategori terpilih\n"
-            "- **R_Output/Aset [U4]** = (27a − 26c) / 28c → wajar jika **0,200 – 0,400**\n"
+            "- **R_Output/Aset [U4]** = (27a − 26c) / 28c, dengan **28c = 28a + 28b** → wajar jika **0,200 – 0,400**\n"
             "- **R_Upah/NTB [U5]** = 26a / NTB → wajar jika **0,400 – 0,600**\n\n"
             "Rasio dibulatkan ke 3 digit di belakang koma sebelum dicek terhadap interval. "
             "Titik = pemisah ribuan, koma = desimal."
