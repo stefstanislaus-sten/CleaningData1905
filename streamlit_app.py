@@ -1,5 +1,9 @@
 import re
 import json
+import os
+import urllib.parse
+
+import requests
 import streamlit.components.v1 as components
 import streamlit as st
 
@@ -85,10 +89,117 @@ def cb_reset_gen():
 
 
 # ----------------------------------------------------------------------------
+# PENCARIAN WEB (hasil tampil di dalam aplikasi)
+# ----------------------------------------------------------------------------
+def _secret(nama):
+    try:
+        v = st.secrets.get(nama)
+    except Exception:
+        v = None
+    return v or os.environ.get(nama)
+
+
+def _bersihkan(teks):
+    return re.sub(r"<[^>]+>", "", teks or "").strip()
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cari_web(q: str, jumlah: int = 8):
+    """Kembalikan (nama_mesin, [ {judul, url, ringkasan} ]). Error tidak di-cache."""
+    brave = _secret("BRAVE_API_KEY")
+    if brave:
+        r = requests.get(
+            "https://api.search.brave.com/res/v1/web/search",
+            params={"q": q, "count": jumlah, "country": "ID", "search_lang": "id"},
+            headers={"X-Subscription-Token": brave, "Accept": "application/json"},
+            timeout=15,
+        )
+        r.raise_for_status()
+        items = r.json().get("web", {}).get("results", [])
+        return "Brave Search", [
+            {"judul": _bersihkan(i.get("title")), "url": i.get("url", ""),
+             "ringkasan": _bersihkan(i.get("description"))}
+            for i in items
+        ]
+    try:
+        try:
+            from ddgs import DDGS
+        except ImportError:
+            from duckduckgo_search import DDGS
+    except ImportError:
+        raise RuntimeError("TIDAK_ADA_MESIN")
+    items = DDGS().text(q, region="id-id", max_results=jumlah)
+    return "DuckDuckGo", [
+        {"judul": _bersihkan(i.get("title")), "url": i.get("href", ""),
+         "ringkasan": _bersihkan(i.get("body"))}
+        for i in items
+    ]
+
+
+def _md_aman(teks):
+    return teks.replace("[", "(").replace("]", ")")
+
+
+def tampilkan_pencarian():
+    with st.form("form_cari", clear_on_submit=False):
+        q = st.text_input(
+            "🔎 Cari fenomena",
+            placeholder="mis. berapa harga barang fotocopy aset 1",
+            key="cari_q",
+        )
+        kirim = st.form_submit_button("Cari", use_container_width=True)
+
+    if kirim:
+        q = (q or "").strip()
+        if not q:
+            st.session_state["cari_hasil"] = None
+            st.warning("Ketik kata kunci pencarian dulu.")
+        else:
+            try:
+                with st.spinner("Mencari..."):
+                    mesin, hasil = cari_web(q)
+                st.session_state["cari_hasil"] = {"q": q, "mesin": mesin, "hasil": hasil}
+            except RuntimeError:
+                st.session_state["cari_hasil"] = {"q": q, "error": "belum_ada_mesin"}
+            except Exception as e:
+                st.session_state["cari_hasil"] = {"q": q, "error": f"gagal: {e}"}
+
+    data = st.session_state.get("cari_hasil")
+    if not data:
+        return
+    q = data["q"]
+    url_google = "https://www.google.com/search?hl=id&q=" + urllib.parse.quote(q)
+
+    with st.expander(f"Hasil pencarian: {q}", expanded=True):
+        if "error" in data:
+            if data["error"] == "belum_ada_mesin":
+                st.info(
+                    "Mesin pencari belum aktif. Tambahkan `BRAVE_API_KEY` di Secrets, "
+                    "atau pasang paket `ddgs` (lihat requirements.txt)."
+                )
+            else:
+                st.error("Pencarian gagal. " + data["error"])
+        elif not data["hasil"]:
+            st.info("Tidak ada hasil ditemukan.")
+        else:
+            st.caption(f"Sumber: {data['mesin']}")
+            for h in data["hasil"]:
+                if not h["url"].startswith(("http://", "https://")):
+                    continue
+                url = h["url"].replace(")", "%29").replace(" ", "%20")
+                domain = urllib.parse.urlparse(h["url"]).netloc
+                st.markdown(f"**[{_md_aman(h['judul'] or domain)}]({url})**  \n:gray[{domain}]")
+                if h["ringkasan"]:
+                    st.write(h["ringkasan"])
+        st.link_button("Buka hasil lengkap di Google ↗", url_google)
+
+
+# ----------------------------------------------------------------------------
 # TEMPLATE HTML/JS UNTUK TAB ANOMALI (perhitungan live saat mengetik)
 # ----------------------------------------------------------------------------
 HTML_ANOMALI = r"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 :root{--fg:#1f2430;--muted:#6b7280;--line:#e5e7eb;--card:#f3f4f6;--input:#fff;
 --ok:#15803d;--okbg:#dcfce7;--bad:#b91c1c;--badbg:#fee2e2;--warn:#b45309;--warnbg:#fef3c7;
@@ -107,7 +218,9 @@ th{font-size:13px;color:var(--muted);font-weight:600}
 input[type=text],select{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--input);color:var(--fg);font:inherit}
 input[type=text]{text-align:right}
 select{width:auto;min-width:260px}
-#cari{flex:1;min-width:240px;text-align:left}
+select{max-width:100%}
+.scroll{width:100%;overflow-x:auto}
+@media(max-width:520px){select{min-width:0;width:100%}}
 .small{font-size:12px;color:var(--muted)}
 .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:6px 0}
 button{padding:7px 12px;border:1px solid var(--line);border-radius:6px;background:var(--btn);color:var(--fg);font:inherit;cursor:pointer}
@@ -124,20 +237,16 @@ pre{margin:4px 0;padding:10px 12px;background:var(--card);border-radius:8px;whit
 .kk select{min-width:90px}
 </style></head>
 <body><div id="app">
-<div class="row"><b>🔎 Cari fenomena</b>
-<input type="text" id="cari" autocomplete="off" placeholder="mis. berapa harga barang fotocopy aset 1">
-<button id="cariBtn">Cari di Google</button></div>
-<div id="cariInfo" class="small"></div>
 <div class="row"><b>Kategori kewajaran</b><select id="kat"></select></div>
-<table>
+<div class="scroll"><table>
 <thead><tr><th>Kolom</th><th>Perhitungan Data Awal</th><th>Perhitungan Data Adjustment</th><th class="num">Perubahan (Adj &minus; Awal)</th></tr></thead>
-<tbody id="inbody"></tbody></table>
+<tbody id="inbody"></tbody></table></div>
 <div class="row"><button id="salin">↩️ Samakan adjustment dengan data awal</button><button id="reset">🗑️ Reset semua isian</button></div>
 <div class="small">Adjustment otomatis mengikuti Data Awal selama belum Anda ubah sendiri. Semua hasil dihitung langsung saat mengetik.</div>
 
 <h3>Hasil perhitungan &amp; cek kewajaran (live)</h3>
-<table><thead><tr><th>Indikator</th><th>Syarat wajar</th><th class="num">Data Awal</th><th>Status Awal</th><th class="num">Data Adjustment</th><th>Status Adjustment</th><th class="num">Perubahan</th></tr></thead>
-<tbody id="res"></tbody></table>
+<div class="scroll"><table><thead><tr><th>Indikator</th><th>Syarat wajar</th><th class="num">Data Awal</th><th>Status Awal</th><th class="num">Data Adjustment</th><th>Status Adjustment</th><th class="num">Perubahan</th></tr></thead>
+<tbody id="res"></tbody></table></div>
 <div id="ringkas"></div>
 
 <h3>Generate kalimat perbaikan</h3>
@@ -152,7 +261,7 @@ pre{margin:4px 0;padding:10px 12px;background:var(--card);border-radius:8px;whit
 const KOLOM=__KOLOM__, NAMA=__NAMA__, KAT=__KAT__, KODE=__KODE__, KODE_DC=__KODE_DC__;
 const U4=[0.2,0.4], U5=[0.4,0.6], KEY='dc_anomali_state_v1';
 const $=id=>document.getElementById(id);
-let S={kat:'A',awal:{},adj:{},dirty:{},kode:KODE[0],beda:false,kodeKol:{},cari:''};
+let S={kat:'A',awal:{},adj:{},dirty:{},kode:KODE[0],beda:false,kodeKol:{}};
 try{const r=sessionStorage.getItem(KEY); if(r) S=Object.assign(S,JSON.parse(r));}catch(e){}
 KOLOM.forEach(k=>{S.awal[k]=S.awal[k]||'';S.adj[k]=S.adj[k]||'';});
 
@@ -354,24 +463,6 @@ KOLOM.forEach(k=>{
 });
 $('salin').onclick=()=>{KOLOM.forEach(k=>{S.adj[k]=S.awal[k];S.dirty[k]=false;$('d_'+k).value=S.adj[k];});update();};
 $('reset').onclick=()=>{KOLOM.forEach(k=>{S.awal[k]='';S.adj[k]='';S.dirty[k]=false;$('a_'+k).value='';$('d_'+k).value='';});update();};
-$('cari').value=S.cari||'';
-function cariGoogle(){
-  const q=$('cari').value.trim(), info=$('cariInfo');
-  info.textContent='';
-  if(!q){info.textContent='Ketik kata kunci pencarian dulu.';fit();return;}
-  const url='https://www.google.com/search?hl=id&q='+encodeURIComponent(q);
-  const w=window.open(url,'_blank');
-  if(w){try{w.opener=null;}catch(e){}}
-  else{
-    info.textContent='Pop-up diblokir browser. ';
-    const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener noreferrer';
-    a.textContent='Klik di sini untuk membuka hasil pencarian';info.appendChild(a);
-  }
-  fit();
-}
-$('cari').addEventListener('input',()=>{S.cari=$('cari').value;save();});
-$('cari').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();cariGoogle();}});
-$('cariBtn').onclick=cariGoogle;
 buildKodeKol(); update();
 window.__S=()=>S;
 })();
@@ -457,6 +548,7 @@ with tab_gen:
 
 # ======================== TAB 2: PERHITUNGAN ANOMALI ========================
 with tab_anomali:
+    tampilkan_pencarian()
     with st.expander("Rumus & aturan kewajaran"):
         st.markdown(
             "- **NTB [U2]** = 27a − (26b + 26c + 26d) → wajar jika **tidak negatif**\n"
