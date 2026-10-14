@@ -7,7 +7,7 @@ import requests
 import streamlit.components.v1 as components
 import streamlit as st
 
-st.set_page_config(page_title="Generator DC & Anomali", page_icon="📝", layout="wide")
+st.set_page_config(page_title="Generator DC & Anomali", page_icon="📝", layout="wide", initial_sidebar_state="collapsed")
 
 # ----------------------------------------------------------------------------
 # DATA MASTER
@@ -89,8 +89,19 @@ def cb_reset_gen():
 
 
 # ----------------------------------------------------------------------------
-# PENCARIAN WEB (hasil tampil di dalam aplikasi)
+# PENELUSURAN GOOGLE (Gemini + Grounding with Google Search) -> jawaban singkat
 # ----------------------------------------------------------------------------
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+MODEL_DEFAULT = ["gemini-3-flash-preview", "gemini-2.5-flash"]  # dicoba berurutan
+PETUNJUK = (
+    "Kamu asisten pencari data harga/statistik untuk petugas survei di Indonesia. "
+    "Gunakan hasil Google Search. Jawab LANGSUNG dalam 1-2 kalimat bahasa Indonesia "
+    "tanpa pembukaan, tanpa daftar. Jika menyangkut harga/nilai, sebutkan angka rata-rata "
+    "(dan kisarannya bila ada) dalam Rupiah, contoh: 'Harga mesin fotocopy rata-rata "
+    "sekitar Rp100 juta (kisaran Rp40-250 juta).' Jika data tidak ditemukan, katakan singkat."
+)
+
+
 def _secret(nama):
     try:
         v = st.secrets.get(nama)
@@ -99,99 +110,114 @@ def _secret(nama):
     return v or os.environ.get(nama)
 
 
-def _bersihkan(teks):
-    return re.sub(r"<[^>]+>", "", teks or "").strip()
-
-
 @st.cache_data(ttl=3600, show_spinner=False)
-def cari_web(q: str, jumlah: int = 8):
-    """Kembalikan (nama_mesin, [ {judul, url, ringkasan} ]). Error tidak di-cache."""
-    brave = _secret("BRAVE_API_KEY")
-    if brave:
-        r = requests.get(
-            "https://api.search.brave.com/res/v1/web/search",
-            params={"q": q, "count": jumlah, "country": "ID", "search_lang": "id"},
-            headers={"X-Subscription-Token": brave, "Accept": "application/json"},
-            timeout=15,
+def cari_google(q: str):
+    """Jawaban singkat berbasis Google Search. Error tidak di-cache."""
+    kunci = _secret("GEMINI_API_KEY")
+    if not kunci:
+        raise RuntimeError("TIDAK_ADA_KUNCI")
+    modelkustom = _secret("GEMINI_MODEL")
+    daftar = ([modelkustom] if modelkustom else []) + MODEL_DEFAULT
+    body = {
+        "systemInstruction": {"parts": [{"text": PETUNJUK}]},
+        "contents": [{"parts": [{"text": q}]}],
+        "tools": [{"google_search": {}}],
+        "generationConfig": {"temperature": 0.2},
+    }
+    r = None
+    for model in daftar:
+        r = requests.post(
+            GEMINI_URL.format(model=model),
+            headers={"x-goog-api-key": kunci, "Content-Type": "application/json"},
+            json=body,
+            timeout=45,
         )
-        r.raise_for_status()
-        items = r.json().get("web", {}).get("results", [])
-        return "Brave Search", [
-            {"judul": _bersihkan(i.get("title")), "url": i.get("url", ""),
-             "ringkasan": _bersihkan(i.get("description"))}
-            for i in items
-        ]
-    try:
+        # model tidak ditemukan/tidak tersedia -> coba model berikutnya
+        if r.status_code in (400, 404) and "model" in r.text.lower() and "not found" in r.text.lower():
+            continue
+        break
+    if r.status_code != 200:
         try:
-            from ddgs import DDGS
-        except ImportError:
-            from duckduckgo_search import DDGS
-    except ImportError:
-        raise RuntimeError("TIDAK_ADA_MESIN")
-    items = DDGS().text(q, region="id-id", max_results=jumlah)
-    return "DuckDuckGo", [
-        {"judul": _bersihkan(i.get("title")), "url": i.get("href", ""),
-         "ringkasan": _bersihkan(i.get("body"))}
-        for i in items
-    ]
+            pesan = r.json().get("error", {}).get("message", r.text)
+        except Exception:
+            pesan = r.text
+        raise RuntimeError(f"Google/Gemini {r.status_code}: {pesan[:200]}")
 
-
-def _md_aman(teks):
-    return teks.replace("[", "(").replace("]", ")")
+    data = r.json()
+    kandidat = (data.get("candidates") or [None])[0]
+    if not kandidat:
+        raise RuntimeError("Google tidak mengembalikan jawaban untuk pertanyaan ini.")
+    teks = " ".join(
+        p.get("text", "") for p in kandidat.get("content", {}).get("parts", [])
+    ).strip()
+    meta = kandidat.get("groundingMetadata", {})
+    sumber, dilihat = [], set()
+    for c in meta.get("groundingChunks", []):
+        w = c.get("web") or {}
+        uri = w.get("uri", "")
+        if uri.startswith(("http://", "https://")) and uri not in dilihat:
+            dilihat.add(uri)
+            sumber.append((w.get("title") or "sumber", uri))
+    return {
+        "jawaban": teks or "Tidak ditemukan jawaban yang pasti.",
+        "sumber": sumber[:4],
+        "saran_html": (meta.get("searchEntryPoint") or {}).get("renderedContent", ""),
+    }
 
 
 def tampilkan_pencarian():
-    with st.form("form_cari", clear_on_submit=False):
-        q = st.text_input(
-            "🔎 Cari fenomena",
-            placeholder="mis. berapa harga barang fotocopy aset 1",
-            key="cari_q",
-        )
-        kirim = st.form_submit_button("Cari", use_container_width=True)
+    """Panel telusur di sidebar: tersembunyi, dibuka lewat panah di pojok kiri atas."""
+    with st.sidebar:
+        st.markdown("### 🔎 Telusuri Google")
+        with st.form("form_cari"):
+            q = st.text_input(
+                "Pertanyaan",
+                placeholder="mis. berapa harga mesin fotocopy pada umumnya?",
+                key="cari_q",
+            )
+            kirim = st.form_submit_button("Cari")
 
-    if kirim:
-        q = (q or "").strip()
-        if not q:
-            st.session_state["cari_hasil"] = None
-            st.warning("Ketik kata kunci pencarian dulu.")
-        else:
-            try:
-                with st.spinner("Mencari..."):
-                    mesin, hasil = cari_web(q)
-                st.session_state["cari_hasil"] = {"q": q, "mesin": mesin, "hasil": hasil}
-            except RuntimeError:
-                st.session_state["cari_hasil"] = {"q": q, "error": "belum_ada_mesin"}
-            except Exception as e:
-                st.session_state["cari_hasil"] = {"q": q, "error": f"gagal: {e}"}
+        if kirim:
+            q = (q or "").strip()
+            if not q:
+                st.session_state["cari_hasil"] = None
+                st.warning("Ketik pertanyaan dulu.")
+            else:
+                try:
+                    with st.spinner("Menelusuri Google..."):
+                        st.session_state["cari_hasil"] = {"q": q, **cari_google(q)}
+                except RuntimeError as e:
+                    st.session_state["cari_hasil"] = {"q": q, "error": str(e)}
+                except Exception as e:
+                    st.session_state["cari_hasil"] = {"q": q, "error": f"Gagal terhubung: {e}"}
 
-    data = st.session_state.get("cari_hasil")
-    if not data:
-        return
-    q = data["q"]
-    url_google = "https://www.google.com/search?hl=id&q=" + urllib.parse.quote(q)
+        data = st.session_state.get("cari_hasil")
+        if not data:
+            return
+        url_google = "https://www.google.com/search?hl=id&q=" + urllib.parse.quote(data["q"])
 
-    with st.expander(f"Hasil pencarian: {q}", expanded=True):
         if "error" in data:
-            if data["error"] == "belum_ada_mesin":
+            if data["error"] == "TIDAK_ADA_KUNCI":
                 st.info(
-                    "Mesin pencari belum aktif. Tambahkan `BRAVE_API_KEY` di Secrets, "
-                    "atau pasang paket `ddgs` (lihat requirements.txt)."
+                    "Penelusuran belum aktif. Tambahkan `GEMINI_API_KEY` di Settings → Secrets "
+                    "(kunci gratis dari aistudio.google.com/apikey)."
                 )
             else:
-                st.error("Pencarian gagal. " + data["error"])
-        elif not data["hasil"]:
-            st.info("Tidak ada hasil ditemukan.")
+                st.error(data["error"])
         else:
-            st.caption(f"Sumber: {data['mesin']}")
-            for h in data["hasil"]:
-                if not h["url"].startswith(("http://", "https://")):
-                    continue
-                url = h["url"].replace(")", "%29").replace(" ", "%20")
-                domain = urllib.parse.urlparse(h["url"]).netloc
-                st.markdown(f"**[{_md_aman(h['judul'] or domain)}]({url})**  \n:gray[{domain}]")
-                if h["ringkasan"]:
-                    st.write(h["ringkasan"])
+            st.markdown(f"**{data['jawaban']}**")
+            if data["sumber"]:
+                tautan = " · ".join(
+                    f"[{t.replace('[', '(').replace(']', ')')}]({u.replace(')', '%29')})"
+                    for t, u in data["sumber"]
+                )
+                st.caption("Sumber: " + tautan)
+            if data["saran_html"]:
+                st.iframe(data["saran_html"], height="content")  # Saran Penelusuran Google
         st.link_button("Buka hasil lengkap di Google ↗", url_google)
+        if st.button("Tutup hasil"):
+            st.session_state["cari_hasil"] = None
+            st.rerun()
 
 
 # ----------------------------------------------------------------------------
@@ -487,6 +513,7 @@ def render_anomali():
 # ----------------------------------------------------------------------------
 # UI
 # ----------------------------------------------------------------------------
+tampilkan_pencarian()
 st.title("📝 Generator DC & Perhitungan Anomali")
 tab_gen, tab_anomali = st.tabs(["📝 Generator Kalimat", "📊 Perhitungan Anomali"])
 
@@ -548,7 +575,6 @@ with tab_gen:
 
 # ======================== TAB 2: PERHITUNGAN ANOMALI ========================
 with tab_anomali:
-    tampilkan_pencarian()
     with st.expander("Rumus & aturan kewajaran"):
         st.markdown(
             "- **NTB [U2]** = 27a − (26b + 26c + 26d) → wajar jika **tidak negatif**\n"
