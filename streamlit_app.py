@@ -275,6 +275,12 @@ pre{margin:4px 0;padding:10px 12px;background:var(--card);border-radius:8px;whit
 <body><div id="app">
 <div class="row"><b>Kategori kewajaran</b><select id="kat"></select>
 <label><input type="checkbox" id="saran"> Tampilkan saran perbaikan?</label></div>
+<div class="row" id="saranOpt" style="display:none"><b>Strategi U4</b><select id="strategi">
+<option value="bagi">Bagi proporsional: pendapatan (27a) &amp; aset (28a/28b)</option>
+<option value="aset">Ubah aset saja (output tetap)</option>
+<option value="pendapatan">Ubah pendapatan 27a saja (aset tetap)</option>
+<option value="auto">Otomatis (perubahan terkecil)</option></select>
+<label><input type="checkbox" id="kunci"> Kunci kolom yang sudah saya ubah (sisa dibagi proporsional ke kolom lain)</label></div>
 <div class="scroll"><table id="tin" class="hide-sg">
 <thead><tr><th>Kolom</th><th>Perhitungan Data Awal</th><th>Perhitungan Data Adjustment</th><th class="num">Perubahan (Adj &minus; Awal)</th><th class="num sg-col">Saran perbaikan perhitungan</th></tr></thead>
 <tbody id="inbody"></tbody></table></div>
@@ -300,7 +306,7 @@ pre{margin:4px 0;padding:10px 12px;background:var(--card);border-radius:8px;whit
 const KOLOM=__KOLOM__, NAMA=__NAMA__, KAT=__KAT__, KODE=__KODE__, KODE_DC=__KODE_DC__;
 const U4=[0.2,0.4], U5=[0.4,0.6], KEY='dc_anomali_state_v2';
 const $=id=>document.getElementById(id);
-let S={kat:'A',awal:{},adj:{},dirty:{},kode:KODE[0],beda:false,kodeKol:{},pakai28c:false,saran:false};
+let S={kat:'A',awal:{},adj:{},dirty:{},kode:KODE[0],beda:false,kodeKol:{},pakai28c:false,saran:false,kunci:true,strategi:'bagi'};
 try{const r=sessionStorage.getItem(KEY); if(r) S=Object.assign(S,JSON.parse(r));}catch(e){}
 KOLOM.forEach(k=>{S.awal[k]=S.awal[k]||'';S.adj[k]=S.adj[k]||'';});
 
@@ -409,27 +415,83 @@ function cekOk(v){
   const h=hitungV(v);
   return evaluasi(h).every(e=>e.cls!=='bad'&&e.cls!=='warn');
 }
-function alloc(n,ks,delta,fb){  // bagi perubahan proporsional terhadap nilai sekarang
-  if(Math.abs(delta)<1e-9) return;
-  const s=n[ks[0]]+n[ks[1]];
-  if(s>0) ks.forEach(k=>{n[k]=n[k]+delta*(n[k]/s);}); else n[fb]+=delta;
+function kunciMap(){  // kolom yang sudah diubah user (Adjustment != Awal) dianggap "terkunci"
+  const L={};
+  KOLOM.forEach(k=>{L[k]=!!S.kunci&&k!=='28c'&&S.adj[k]!==S.awal[k];});
+  return L;
 }
-function rencana(mode,v){
-  const A0=v['28a']+v['28b'], R0=v['27a']-v['26c'], C0=v['26b']+v['26d'];
-  let R=R0,A=A0,a27=v['27a'];
-  if(mode==='aset'){                       // output tetap, aset disesuaikan
-    if(R0<=0) return null;
-    A=R0/ratioFix(A0>0?R0/A0:null,U4[0],U4[1]);
-  }else{                                   // aset tetap, pendapatan (27a) disesuaikan
-    if(A0<=0) return null;
-    R=ratioFix(R0/A0,U4[0],U4[1])*A0; a27=R+v['26c'];
+function alloc(n,ks,delta,L,fb){  // bagi perubahan proporsional ke kolom yang belum terkunci
+  if(Math.abs(delta)<1e-9) return;
+  const fr=ks.filter(k=>!L[k]); if(!fr.length) return;
+  const s=fr.reduce((a,k)=>a+n[k],0);
+  if(s>0) fr.forEach(k=>{n[k]=n[k]+delta*(n[k]/s);});
+  else n[fr.indexOf(fb)>=0?fb:fr[0]]+=delta;
+  fr.forEach(k=>{if(n[k]<0) n[k]=0;});
+}
+function clampR(x,lo,hi){  // jepit ke [lo,hi] dengan margin kecil di dalam
+  if(x>=lo&&x<=hi) return x;
+  const d=isFinite(hi)?(hi-lo)*0.02:lo*0.02;
+  return x<lo?Math.min(lo+d,hi):Math.max(hi-d,lo);
+}
+function rencana(mode,v,L){
+  const iv3=KAT[S.kat]||[0.001,1];
+  const A0=v['28a']+v['28b'], R0=v['27a']-v['26c'], C0=v['26b']+v['26d'], W=v['26a'];
+  const bebasA=!(L['28a']&&L['28b']), bebasR=!L['27a'], bebasC=!(L['26b']&&L['26d']), bebasW=!L['26a'];
+
+  // 1) batas nilai Output (R*) yang masih mungkin, mengingat kolom yang terkunci
+  let lo=1e-9, hi=Infinity;
+  const potong=(a,b)=>{if(a>lo) lo=a; if(b<hi) hi=b;};
+  if(!bebasA&&A0>0) potong(U4[0]*A0,U4[1]*A0);                 // aset terkunci -> U4
+  if(!bebasC){                                                  // biaya terkunci -> U3 (& U5)
+    if(iv3[0]<1) potong(C0/(1-iv3[0]),Infinity);
+    if(iv3[1]<1) potong(0,C0/(1-iv3[1]));
+    if(!bebasW) potong(C0+W/U5[1],C0+W/U5[0]);
+  }else if(!bebasW){                                            // upah terkunci -> U3 & U5
+    if(iv3[0]>0) potong(0,W/(U5[0]*iv3[0]));
+    if(iv3[1]>0) potong(W/(U5[1]*iv3[1]),Infinity);
   }
-  const iv=KAT[S.kat]||[0.001,1];
-  const Nt=ratioFix((R-C0)/R,iv[0],iv[1])*R;   // NTB target (U3)
-  const n=Object.assign({},v); n['27a']=a27;
-  alloc(n,['26b','26d'],(R-Nt)-C0,'26b');      // biaya disesuaikan
-  alloc(n,['28a','28b'],A-A0,'28b');           // aset disesuaikan
-  if(Nt>1e-9) n['26a']=ratioFix(v['26a']/Nt,U5[0],U5[1])*Nt;  // upah (U5)
+
+  // 2) Output target (R*) menurut strategi U4
+  const r0=(A0>0&&R0>0)?R0/A0:null;
+  const r4=ratioFix(r0,U4[0],U4[1]);
+  let Rp;
+  if(!bebasR) Rp=R0;
+  else if(bebasA){
+    if(mode==='aset') Rp=R0;
+    else if(mode==='pendapatan') Rp=A0>0?r4*A0:R0;
+    else Rp=r0!==null?R0*Math.sqrt(r4/r0):(A0>0?r4*A0:R0);      // bagi: pendapatan & aset sama-sama bergeser
+  }else Rp=A0>0?r4*A0:R0;
+  if(bebasR&&Rp<=0){ if(A0>0) Rp=r4*A0; else return null; }
+  let Rs;
+  if(!bebasR){ if(R0<lo-1e-6||R0>hi+1e-6) return null; Rs=R0; }
+  else{ if(lo>hi) return null; Rs=clampR(Rp,lo,hi); }
+
+  // 3) aset target (A*)
+  let As=A0;
+  if(bebasA) As=Rs/ratioFix(A0>0?Rs/A0:null,U4[0],U4[1]);
+
+  // 4) biaya target (C*) -> NTB target (N*) agar U2 & U3 wajar
+  let Cs=C0;
+  if(bebasC){
+    let nT=ratioFix((Rs-C0)/Rs,iv3[0],iv3[1])*Rs;
+    if(!bebasW){
+      const nlo=Math.max(iv3[0]*Rs,W/U5[1]), nhi=Math.min(iv3[1]*Rs,W/U5[0]);
+      nT=clampR(nT,nlo,Math.max(nhi,nlo));
+    }
+    Cs=Rs-nT;
+  }
+  const Ns=Rs-Cs;
+
+  // 5) upah target (W*) -> U5
+  let Ws=W;
+  if(bebasW&&Ns>1e-9) Ws=ratioFix(W/Ns,U5[0],U5[1])*Ns;
+
+  // 6) terapkan ke kolom (hanya kolom yang belum terkunci)
+  const n=Object.assign({},v);
+  n['27a']=v['27a']+(Rs-R0);
+  alloc(n,['26b','26d'],Cs-C0,L,'26b');
+  alloc(n,['28a','28b'],As-A0,L,'28b');
+  if(bebasW) n['26a']=Ws;
   KOLOM.forEach(k=>{ if(Math.abs(n[k]-v[k])<=1e-6*Math.max(1,Math.abs(v[k]))) n[k]=v[k]; });
   n['28c']=n['28a']+n['28b'];
   return n;
@@ -444,17 +506,27 @@ function sarankan(){
   KOLOM.forEach(k=>{const x=parse(S.adj[k]); if(k!=='28c'&&x!==null) any=true; v[k]=nz(x);});
   if(!any) return {tipe:'kosong'};
   if(cekOk(v)) return {tipe:'wajar',v};
-  const hasil=[];
-  ['aset','pendapatan'].forEach(m=>{
-    const n=rencana(m,v); if(!n) return;
-    let f=bulatkan(n,v,1000), ok=cekOk(f);
-    if(!ok){f=bulatkan(n,v,1); ok=cekOk(f);}
-    let tot=0; KOLOM.forEach(k=>{if(k!=='28c') tot+=Math.abs(f[k]-v[k]);});
-    hasil.push({mode:m,n:f,ok:ok,tot:tot});
-  });
-  if(!hasil.length) return {tipe:'tidak',v};
-  hasil.sort((a,b)=>((b.ok?1:0)-(a.ok?1:0))||(a.tot-b.tot));
-  return {tipe:hasil[0].ok?'ok':'sebagian',v:v,n:hasil[0].n,mode:hasil[0].mode};
+  const L=kunciMap(), kunci=KOLOM.filter(k=>L[k]);
+  const modes=S.strategi==='auto'?['bagi','aset','pendapatan']:[S.strategi];
+  const coba=Lk=>{
+    const hasil=[];
+    modes.forEach(m=>{
+      const n=rencana(m,v,Lk); if(!n) return;
+      let f=bulatkan(n,v,1000), ok=cekOk(f);
+      if(!ok){f=bulatkan(n,v,1); ok=cekOk(f);}
+      let tot=0; KOLOM.forEach(k=>{if(k!=='28c') tot+=Math.abs(f[k]-v[k]);});
+      hasil.push({mode:m,n:f,ok:ok,tot:tot});
+    });
+    hasil.sort((a,b)=>((b.ok?1:0)-(a.ok?1:0))||(a.tot-b.tot));
+    return hasil;
+  };
+  let h=coba(L), lepas=false;
+  if(kunci.length&&(!h.length||!h[0].ok)){   // kolom terkunci tidak cukup -> coba tanpa kunci
+    const h2=coba({});
+    if(h2.length&&(h2[0].ok||!h.length)){h=h2;lepas=true;}
+  }
+  if(!h.length) return {tipe:'tidak',v};
+  return {tipe:h[0].ok?'ok':'sebagian',v:v,n:h[0].n,mode:h[0].mode,kunci:kunci,lepas:lepas};
 }
 
 // ---------- render ----------
@@ -493,29 +565,40 @@ function renderResult(){
 }
 function renderSaran(){
   $('tin').classList.toggle('hide-sg',!S.saran);
+  $('saranOpt').style.display=S.saran?'flex':'none';
   const info=$('saranInfo'); info.innerHTML='';
   if(!S.saran) return;
-  const r=sarankan(), ubah=[];
+  const r=sarankan(), L=kunciMap(), ubah=[];
   KOLOM.forEach(k=>{
     const e=$('s_'+k); let d=0;
     if(r.n) d=r.n[k]-r.v[k];
-    if(Math.abs(d)<0.5){e.innerHTML='—';return;}
+    if(Math.abs(d)<0.5){
+      e.innerHTML=(L[k]&&r.tipe!=='wajar'&&r.tipe!=='kosong')?'<span class="zero">🔒 sudah Anda ubah</span>':'—';
+      return;
+    }
     if(k!=='28c') ubah.push(k);
-    e.innerHTML=`<span class="${d>0?'up':'down'}">${d>0?'Tambah ':'Kurangi '}${fmtAngka(Math.abs(d))}</span><small>menjadi ${fmtAngka(r.n[k])}</small>`;
+    e.innerHTML=`<span class="${d>0?'up':'down'}">${d>0?'Tambah ':'Kurangi '}${fmtAngka(Math.abs(d))}</span><small>menjadi ${fmtAngka(r.n[k])}${L[k]?' · sudah Anda ubah':''}</small>`;
   });
   let msg='',cls='na';
   if(r.tipe==='kosong'){msg='Isi data dulu untuk melihat saran.';}
   else if(r.tipe==='wajar'){msg='✅ Data Adjustment sudah wajar, tidak ada saran perbaikan.';cls='ok';}
   else if(r.tipe==='tidak'){msg='⚠️ Saran belum bisa dihitung. Pastikan 27a lebih besar dari 26c, atau isi nilai aset (28a/28b).';cls='warn';}
   else{
-    const strategi=r.mode==='aset'
-      ? 'Output (27a, 26c) dipertahankan; aset (28a/28b), biaya (26b/26d), dan upah (26a) disesuaikan seperlunya.'
-      : 'Aset (28a/28b) dipertahankan; pendapatan (27a), biaya (26b/26d), dan upah (26a) disesuaikan seperlunya.';
-    if(r.tipe==='ok'){msg='✅ Jika saran diterapkan, U2–U5 semua wajar. Kolom yang disarankan berubah: '+ubah.join(', ')+'. '+strategi;cls='ok';}
+    const strategi={
+      bagi:'Perbaikan U4 dibagi proporsional antara pendapatan (27a) dan aset (28a/28b); biaya (26b/26d) dan upah (26a) disesuaikan seperlunya.',
+      aset:'Output (27a, 26c) dipertahankan; aset (28a/28b), biaya (26b/26d), dan upah (26a) disesuaikan seperlunya.',
+      pendapatan:'Aset (28a/28b) dipertahankan; pendapatan (27a), biaya (26b/26d), dan upah (26a) disesuaikan seperlunya.'
+    }[r.mode];
+    const kk=(r.kunci&&r.kunci.length)
+      ? (r.lepas
+          ? ' ⚠️ Kolom yang sudah Anda ubah ('+r.kunci.join(', ')+') saja tidak cukup, jadi saran ini juga menyesuaikan kolom tersebut.'
+          : ' 🔒 Kolom yang sudah Anda ubah ('+r.kunci.join(', ')+') dipertahankan; sisa penyesuaian dibagi proporsional ke kolom lain.')
+      : '';
+    if(r.tipe==='ok'){msg='✅ Jika saran diterapkan, U2–U5 semua wajar. Kolom yang disarankan berubah: '+ubah.join(', ')+'. '+strategi+kk;cls='ok';}
     else{
       const ev=evaluasi(hitungV(r.n));
       const sisa=ev.map((e,i)=>(e.cls==='bad'||e.cls==='warn')?NAMA_IND[i]:null).filter(Boolean);
-      msg='⚠️ Saran terbaik masih menyisakan: '+sisa.join(', ')+' (mis. karena kategori yang dipilih). Kolom yang berubah: '+ubah.join(', ')+'.';cls='warn';
+      msg='⚠️ Saran terbaik masih menyisakan: '+sisa.join(', ')+' (mis. karena kategori yang dipilih). Kolom yang berubah: '+ubah.join(', ')+'.'+kk;cls='warn';
     }
   }
   info.innerHTML=`<div class="box ${cls}"></div>`; info.firstChild.textContent=msg;
@@ -538,7 +621,7 @@ function renderGen(){
   const box=$('gen'); box.innerHTML='';
   if(!ch.length){box.innerHTML='<div class="box na">Belum ada kolom yang berbeda antara Data Awal dan Adjustment.</div>';return;}
   const wrap=document.createElement('div');wrap.className='grid2';
-  [['PRIBADI — dengan nilai awal',true],['FASIH/KONFIRMASI — tanpa nilai awal',false]].forEach(([jd,tampil])=>{
+  [['PRIBADI/HISTORI — dengan nilai awal',true],['KOMENTAR FASIH — tanpa nilai awal',false]].forEach(([jd,tampil])=>{
     const t=ch.map(k=>kalimat(kodeFor(k),k,S.awal[k],S.adj[k],tampil)).filter(Boolean).join('\n');
     const d=document.createElement('div');
     const head=document.createElement('div');head.className='row';
@@ -576,6 +659,8 @@ $('kat').value=S.kat; $('kat').onchange=()=>{S.kat=$('kat').value;update();};
 KODE.forEach(x=>{const o=document.createElement('option');o.value=x;o.textContent=x+' — '+KODE_DC[x];$('kode').appendChild(o);});
 $('kode').value=S.kode; $('kode').onchange=()=>{S.kode=$('kode').value;update();};
 $('saran').checked=S.saran; $('saran').onchange=()=>{S.saran=$('saran').checked;update();};
+$('kunci').checked=S.kunci; $('kunci').onchange=()=>{S.kunci=$('kunci').checked;update();};
+$('strategi').value=S.strategi; $('strategi').onchange=()=>{S.strategi=$('strategi').value;update();};
 $('p28c').checked=S.pakai28c; $('p28c').onchange=()=>{S.pakai28c=$('p28c').checked;buildKodeKol();update();};
 $('beda').checked=S.beda; $('beda').onchange=()=>{S.beda=$('beda').checked;buildKodeKol();update();};
 
@@ -704,6 +789,7 @@ with tab_anomali:
             "Rasio dibulatkan ke 3 digit di belakang koma sebelum dicek terhadap interval. "
             "Titik = pemisah ribuan, koma = desimal.\n\n"
             "**Saran perbaikan**: centang *Tampilkan saran perbaikan?* untuk memunculkan kolom "
-            "saran (nominal tambah/kurangi per kolom agar U2–U5 wajar)."
+            "saran (nominal tambah/kurangi per kolom agar U2–U5 wajar). Kolom yang sudah Anda ubah "
+            "di Adjustment dikunci, dan sisa penyesuaian dibagi proporsional ke kolom lain."
         )
     render_anomali()
