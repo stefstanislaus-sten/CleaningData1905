@@ -22,6 +22,12 @@ KODE_DC = {
 KODE_UBAH = [k for k in KODE_DC if k != "#0"]  # untuk menu anomali (ada perubahan)
 
 KOLOM = ["26a", "26b", "26c", "26d", "27a", "28a", "28b", "28c"]
+# Nomor kolom pada catatan jika usaha dimulai tahun 2026
+KOLOM_2026 = {
+    "26a": "30a", "26b": "30b", "26c": "30c", "26d": "30d",
+    "27a": "31a", "28a": "32a", "28b": "32b", "28c": "32c",
+}
+
 NAMA_KOLOM = {
     "26a": "Upah",
     "26b": "Biaya produksi",
@@ -343,16 +349,18 @@ pre{margin:4px 0;padding:10px 12px;background:var(--card);border-radius:8px;whit
 <div class="small">Kalimat dibuat hanya untuk kolom yang nilainya berbeda antara Data Awal dan Adjustment.</div>
 <div class="row"><b>Kode DC</b><select id="kode"></select>
 <label><input type="checkbox" id="beda"> Pakai kode DC berbeda untuk tiap kolom</label>
-<label><input type="checkbox" id="p28c"> Sertakan 28c (total aset) dalam kalimat</label></div>
+<label><input type="checkbox" id="p28c"> Sertakan 28c (total aset) dalam kalimat</label>
+<label><input type="checkbox" id="th26"> Usaha dimulai tahun 2026</label></div>
+<div class="small" id="hint26" style="display:none">Nomor kolom pada catatan: 26a→30a, 26b→30b, 26c→30c, 26d→30d, 27a→31a, 28a→32a, 28b→32b, 28c→32c.</div>
 <div id="kk" class="kk"></div>
 <div id="gen"></div>
 </div>
 <script>
 (function(){
-const KOLOM=__KOLOM__, NAMA=__NAMA__, KAT=__KAT__, KODE=__KODE__, KODE_DC=__KODE_DC__;
+const KOLOM=__KOLOM__, NAMA=__NAMA__, KAT=__KAT__, KODE=__KODE__, KODE_DC=__KODE_DC__, MAP26=__MAP26__;
 const U4=[0.2,0.4], U5=[0.4,0.6], KEY='dc_anomali_state_v4';
 const $=id=>document.getElementById(id);
-let S={kat:'A',awal:{},adj:{},dirty:{},kode:KODE[0],beda:false,kodeKol:{},pakai28c:false,saran:false,kunci:true,cara:'rata',strategi:'auto',sR:'auto',sC:'auto',sA:'auto',sW:'auto',tahan:{}};
+let S={kat:'A',awal:{},adj:{},dirty:{},kode:KODE[0],beda:false,kodeKol:{},pakai28c:false,saran:false,th26:false,kunci:true,cara:'rata',strategi:'auto',sR:'auto',sC:'auto',sA:'auto',sW:'auto',tahan:{}};
 try{const r=sessionStorage.getItem(KEY); if(r) S=Object.assign(S,JSON.parse(r));}catch(e){}
 KOLOM.forEach(k=>{S.awal[k]=S.awal[k]||'';S.adj[k]=S.adj[k]||'';});
 S.tahan=S.tahan||{};
@@ -777,6 +785,7 @@ function renderSaran(){
   }
   info.innerHTML=`<div class="box ${cls}"></div>`; info.firstChild.textContent=msg;
 }
+function lab(k){return S.th26?(MAP26[k]||k):k;}   // nomor kolom pada catatan (usaha mulai 2026 -> 30a..32c)
 function kodeFor(k){return S.beda?(S.kodeKol[k]||S.kode):S.kode;}
 function kalimat(kode,kol,awal,ubah,tampil){
   if(!awal&&!ubah) return null;
@@ -799,11 +808,12 @@ function salinNominal(el){  // nilai disalin dari data-val (angka polos), tampil
 }
 function renderGen(){
   const ch=KOLOM.filter(k=>S.awal[k]!==S.adj[k]&&(k!=='28c'||S.pakai28c));
+  $('hint26').style.display=S.th26?'block':'none';
   const box=$('gen'); box.innerHTML='';
   if(!ch.length){box.innerHTML='<div class="box na">Belum ada kolom yang berbeda antara Data Awal dan Adjustment.</div>';return;}
   const wrap=document.createElement('div');wrap.className='grid2';
   [['CATATAN PRIBADI [dengan nilai awal]',true],['FASIH/KONFIRMASI [tanpa nilai awal]',false]].forEach(([jd,tampil])=>{
-    const t=ch.map(k=>kalimat(kodeFor(k),k,S.awal[k],S.adj[k],tampil)).filter(Boolean).join('\n');
+    const t=ch.map(k=>kalimat(kodeFor(k),lab(k),S.awal[k],S.adj[k],tampil)).filter(Boolean).join('\n');
     const d=document.createElement('div');
     const head=document.createElement('div');head.className='row';
     head.innerHTML='<b></b>';head.firstChild.textContent=jd;
@@ -817,7 +827,7 @@ function buildKodeKol(){
   const c=$('kk');c.innerHTML='';
   if(!S.beda) return;
   KOLOM.filter(k=>k!=='28c'||S.pakai28c).forEach(k=>{
-    const d=document.createElement('div');d.textContent=k;
+    const d=document.createElement('div');d.textContent=lab(k);
     const s=document.createElement('select');
     KODE.forEach(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;s.appendChild(o);});
     s.value=kodeFor(k);
@@ -843,6 +853,7 @@ $('saran').checked=S.saran; $('saran').onchange=()=>{S.saran=$('saran').checked;
 $('cara').value=S.cara; $('cara').onchange=()=>{S.cara=$('cara').value;update();};
 $('kunci').checked=S.kunci; $('kunci').onchange=()=>{S.kunci=$('kunci').checked;update();};
 IDS.forEach(id=>{$(id).value=S[id]; $(id).onchange=()=>{S[id]=$(id).value;update();};});
+$('th26').checked=S.th26; $('th26').onchange=()=>{S.th26=$('th26').checked;buildKodeKol();update();};
 $('p28c').checked=S.pakai28c; $('p28c').onchange=()=>{S.pakai28c=$('p28c').checked;buildKodeKol();update();};
 $('beda').checked=S.beda; $('beda').onchange=()=>{S.beda=$('beda').checked;buildKodeKol();update();};
 
@@ -898,6 +909,7 @@ def render_anomali():
         .replace("__KAT__", json.dumps(KATEGORI))
         .replace("__KODE__", json.dumps(KODE_UBAH))
         .replace("__KODE_DC__", json.dumps(KODE_DC, ensure_ascii=False))
+        .replace("__MAP26__", json.dumps(KOLOM_2026))
     )
     if hasattr(st, "iframe"):  # Streamlit versi baru
         st.iframe(isi, height=TINGGI_ANOMALI)
@@ -927,6 +939,11 @@ with tab_gen:
         key="gen_kode_global",
     )
     beda_kode = st.checkbox("Pakai kode DC berbeda untuk tiap kolom", key="gen_beda_kode")
+    th2026 = st.checkbox(
+        "Usaha dimulai tahun 2026 (nomor kolom di catatan: 26a→30a, 26b→30b, 26c→30c, 26d→30d, "
+        "27a→31a, 28a→32a, 28b→32b, 28c→32c)",
+        key="gen_th2026",
+    )
 
     st.markdown("---")
     h1, h2, h3 = st.columns(3)
@@ -937,7 +954,7 @@ with tab_gen:
     baris = []
     for kol in KOLOM:
         c1, c2, c3 = st.columns(3)
-        c1.markdown(f"**{kol}**")
+        c1.markdown(f"**{kol}**" + (f" → {KOLOM_2026[kol]}" if th2026 else ""))
         awal = c2.text_input(
             f"Awal {kol}", key=f"awal_{kol}", label_visibility="collapsed",
             placeholder="mis. 500000", on_change=cb_format, args=(f"awal_{kol}",),
@@ -953,7 +970,7 @@ with tab_gen:
                 index=list(KODE_DC.keys()).index(kode_global),
                 key=f"kode_{kol}", label_visibility="collapsed",
             )
-        baris.append((kode, kol, awal, ubah))
+        baris.append((kode, KOLOM_2026[kol] if th2026 else kol, awal, ubah))
 
     st.markdown("---")
     hasil = [s for s in (buat_kalimat(*b) for b in baris) if s]
