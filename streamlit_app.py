@@ -13,13 +13,13 @@ st.set_page_config(page_title="Generator DC & Anomali", page_icon="📝", layout
 # DATA MASTER
 # ----------------------------------------------------------------------------
 KODE_DC = {
-    "#DC_00": "tetap",
-    "#DC_01": "berubah karena miskonsep PPL",
-    "#DC_02": "berubah karena konfirmasi/revisit responden",
-    "#DC_03": "berubah karena info survei/data administrasi",
-    "#DC_04": "berubah karena selain #DC_01 - #DC_03",
+    "#0": "tetap",
+    "#1": "berubah karena miskonsep PPL",
+    "#2": "berubah karena konfirmasi/revisit responden",
+    "#3": "berubah karena info survei/data administrasi",
+    "#4": "berubah karena selain #1 - #3",
 }
-KODE_UBAH = [k for k in KODE_DC if k != "#DC_00"]  # untuk menu anomali (ada perubahan)
+KODE_UBAH = [k for k in KODE_DC if k != "#0"]  # untuk menu anomali (ada perubahan)
 
 KOLOM = ["26a", "26b", "26c", "26d", "27a", "28a", "28b", "28c"]
 NAMA_KOLOM = {
@@ -70,7 +70,7 @@ def buat_kalimat(kode, kolom, awal, ubah, tampil_awal=True):
     if not awal and not ubah:
         return None
     ubah_txt = ubah if ubah else "kosong"
-    if kode == "#DC_00":
+    if kode == "0":
         return f"{kode} isian {kolom} tetap {awal if awal else 'kosong'}"
     if tampil_awal and awal:
         return f"{kode} memperbaiki isian {kolom} dari {awal} menjadi {ubah_txt}"
