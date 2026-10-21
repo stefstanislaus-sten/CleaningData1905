@@ -708,7 +708,8 @@ function renderGen(){
   const selLine=tampil=>{
     if(selD<=0.5) return null;
     const baru=fmtAngka(nz(parse(S.adj['27b']))+selD), awal=fmtAngka(nz(parse(S.awal['27b'])));
-    return tampil?`Mengubah rincian ${lab('27b')} dari ${awal} menjadi ${baru}`:`Mengubah rincian ${lab('27b')} menjadi ${baru}`;
+    const kd=kodeFor('27b');
+    return tampil?`${kd} memperbaiki rincian ${lab('27b')} dari ${awal} menjadi ${baru}`:`${kd} memperbaiki rincian ${lab('27b')} menjadi ${baru}`;
   };
   if(!ch.length&&!selLine(true)){box.innerHTML='<div class="box na">Belum ada kolom yang berbeda antara Data Awal dan Adjustment.</div>';}
   else{
