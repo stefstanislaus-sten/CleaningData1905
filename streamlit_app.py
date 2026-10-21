@@ -308,7 +308,7 @@ pre{margin:4px 0;padding:10px 12px;background:var(--card);border-radius:8px;whit
 <tbody id="inbody"></tbody></table></div>
 <div id="saranInfo"></div>
 <div id="altG"></div>
-<div class="row"><button id="salin">↩️ Samakan adjustment dengan data awal</button><button id="reset">🗑️ Reset semua isian</button></div>
+<div class="row"><button id="salin">↩️ Samakan adjustment dengan data awal</button><button id="reset">🗑️ Reset semua isian</button><button id="resetKat">🗑️ Reset semua isian + Kategori Kewajaran</button></div>
 <div class="small">Adjustment otomatis mengikuti Data Awal selama belum Anda ubah sendiri. Semua hasil dihitung langsung saat mengetik. Kolom 27b &amp; 26e (abu-abu) tidak masuk perhitungan U2–U5, hanya untuk cek selisih total pendapatan (27c) dan total pengeluaran (26f).</div>
 
 <h3>Hasil perhitungan &amp; cek kewajaran (live)</h3>
@@ -335,7 +335,7 @@ const NO26C=['A','B','C','F','H','K','L','N','O','R','Q','S','T'];   // kategori
 function hide26c(){return NO26C.indexOf(S.kat)>=0;}
 const U4=[0.2,0.4], U5=[0.4,0.6], KEY='dc_anomali_state_v5';
 const $=id=>document.getElementById(id);
-let S={kat:'A',awal:{},adj:{},dirty:{},kode:KODE[0],beda:false,kodeKol:{},pakai28c:false,saran:false,th26:false,kunci:true,tahan:{}};
+let S={kat:'',awal:{},adj:{},dirty:{},kode:KODE[0],beda:false,kodeKol:{},pakai28c:false,saran:false,th26:false,kunci:true,tahan:{}};
 try{const r=sessionStorage.getItem(KEY); if(r) S=Object.assign(S,JSON.parse(r));}catch(e){}
 ALL.forEach(k=>{S.awal[k]=S.awal[k]||'';S.adj[k]=S.adj[k]||'';});
 S.tahan=S.tahan||{};
@@ -428,6 +428,7 @@ function evaluasi(h){
   return val.map((v,i)=>{
     if(i===0){const ok=v>=0; return {txt:fmtAngka(v),cls:ok?'ok':'bad',stat:ok?'✅ Wajar':'❌ Tidak wajar'};}
     if(i===1) return {txt:fmtAngka(v),cls:'na',stat:'➖ Tanpa syarat'};
+    if(i===2&&!S.kat) return {txt:v===null?'-':fmtR(v),cls:'warn',stat:'⚠️ Pilih kategori dulu'};
     if(S.kat==='G'&&i===4) return {txt:v===null?'-':fmtR(v),cls:'na',stat:'➖ Tidak dicek (kategori G)'};
     const s=stRasio(v,iv[i]); return {txt:v===null?'-':fmtR(v),cls:s[0],stat:s[1]};
   });
@@ -590,6 +591,7 @@ function sarankan(){
   const v={};let any=false;
   KOLOM.forEach(k=>{const x=parse(S.adj[k]); if(k!=='28c'&&x!==null) any=true; v[k]=nz(x);});
   if(!any) return {tipe:'kosong'};
+  if(!S.kat) return {tipe:'kategori'};
   if(cekOk(v)) return {tipe:'wajar',v};
   return cariSaran(v);
 }
@@ -658,6 +660,7 @@ function renderSaran(){
   });
   let msg='',cls='na';
   if(r.tipe==='kosong'){msg='Isi data dulu untuk melihat saran.';}
+  else if(r.tipe==='kategori'){msg='⚠️ Pilih kategori kewajaran dulu untuk melihat saran.';cls='warn';}
   else if(r.tipe==='wajar'){msg='✅ Data Adjustment sudah wajar, tidak ada saran perbaikan.';cls='ok';}
   else if(r.tipe==='tidak'){msg='⚠️ Saran belum bisa dihitung. Pastikan 27a lebih besar dari 26c (Output harus positif).';cls='warn';}
   else{
@@ -808,6 +811,7 @@ function apply26c(){   // kategori tanpa 26c: kolom disembunyikan dan nilainya 0
 function update(){apply26c();renderDeltaCols();renderResult();renderSaran();renderGen();save();}
 
 // ---------- init ----------
+{const o0=document.createElement('option');o0.value='';o0.textContent='Pilih Kategori';$('kat').appendChild(o0);}
 Object.keys(KAT).forEach(k=>{
   const o=document.createElement('option');o.value=k;
   const iv=KAT[k];
@@ -865,6 +869,7 @@ ALL.forEach(k=>{
 });
 $('salin').onclick=()=>{ALL.forEach(k=>{S.adj[k]=S.awal[k];S.dirty[k]=false;$('d_'+k).value=S.adj[k];});syncTotal();update();};
 $('reset').onclick=()=>{ALL.forEach(k=>{S.awal[k]='';S.adj[k]='';S.dirty[k]=false;S.tahan[k]=false;$('a_'+k).value='';$('d_'+k).value='';if($('h_'+k))$('h_'+k).checked=false;});syncTotal();update();};
+$('resetKat').onclick=()=>{$('reset').onclick();S.kat='';$('kat').value='';buildKodeKol();update();};
 buildKodeKol(); syncTotal(); update();
 window.__S=()=>S;
 })();
