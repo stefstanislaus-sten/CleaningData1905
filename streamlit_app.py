@@ -724,15 +724,16 @@ function renderGen(){
       d.appendChild(head);d.appendChild(pre);wrap.appendChild(d);
     });
     box.appendChild(wrap);
-    // pengingat: rincian 27b / 26e berubah -> tambahkan flag Kode DC (kode bisa diklik untuk disalin)
+    // pengingat: 27b berubah -> flag Kode DC di 27c; 26e berubah -> flag di 26f (kode bisa diklik untuk disalin)
     const rk=EXTRA.filter(k=>S.awal[k]!==S.adj[k]||(k==='27b'&&selLine(true)));
     if(rk.length){
       const rm=document.createElement('div');rm.className='box warn';
       rm.innerHTML='🚩 <b></b><div style="margin-top:4px"></div>';
-      rm.querySelector('b').textContent='Tambahkan flag Kode DC pada rincian '+rk.map(lab).join('/');
+      const FL={'27b':'27c','26e':'26f'};   // flag ditambahkan pada total: 27b -> 27c, 26e -> 26f
+      rm.querySelector('b').textContent='Tambahkan flag Kode DC pada rincian '+rk.map(k=>lab(FL[k])).join('/');
       rm.querySelector('div').innerHTML='Kode DC (klik untuk menyalin): '+rk.map(k=>{
         const kd=kodeFor(k);
-        return `${lab(k)} → <span class="nom" data-val="${kd}" title="Klik untuk menyalin ${kd}">${kd}</span>`;
+        return `${lab(FL[k])} (karena ${lab(k)} berubah) → <span class="nom" data-val="${kd}" title="Klik untuk menyalin ${kd}">${kd}</span>`;
       }).join(' &nbsp;·&nbsp; ');
       box.appendChild(rm);
     }
