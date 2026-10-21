@@ -724,6 +724,18 @@ function renderGen(){
       d.appendChild(head);d.appendChild(pre);wrap.appendChild(d);
     });
     box.appendChild(wrap);
+    // pengingat: rincian 27b / 26e berubah -> tambahkan flag Kode DC (kode bisa diklik untuk disalin)
+    const rk=EXTRA.filter(k=>S.awal[k]!==S.adj[k]||(k==='27b'&&selLine(true)));
+    if(rk.length){
+      const rm=document.createElement('div');rm.className='box warn';
+      rm.innerHTML='🚩 <b></b><div style="margin-top:4px"></div>';
+      rm.querySelector('b').textContent='Tambahkan flag Kode DC pada rincian '+rk.map(lab).join('/');
+      rm.querySelector('div').innerHTML='Kode DC (klik untuk menyalin): '+rk.map(k=>{
+        const kd=kodeFor(k);
+        return `${lab(k)} → <span class="nom" data-val="${kd}" title="Klik untuk menyalin ${kd}">${kd}</span>`;
+      }).join(' &nbsp;·&nbsp; ');
+      box.appendChild(rm);
+    }
   }
   renderSel();
 }
@@ -814,7 +826,7 @@ EXTRA.forEach(k=>{   // kolom tambahan: tidak masuk perhitungan utama
   <td class="sg-col"></td></tr>`;
 });
 $('inbody').innerHTML=rows;
-['tin','altG'].forEach(id=>$(id).addEventListener('click',e=>{   // klik nominal saran -> salin
+['tin','altG','gen'].forEach(id=>$(id).addEventListener('click',e=>{   // klik nominal saran -> salin
   const el=e.target&&e.target.closest?e.target.closest('.nom'):null;
   if(el) salinNominal(el);
 }));
