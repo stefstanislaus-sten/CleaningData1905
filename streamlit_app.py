@@ -460,15 +460,17 @@ function kunciMap(termasukOtomatis){  // terkunci = dipertahankan manual (centan
 // Tiap kolom dibulatkan ke skala nilainya (50 juta -> kelipatan 1 juta; 5 juta -> kelipatan 100 ribu).
 // d>0: total perubahan minimal d; d<0: total perubahan maksimal d (dibulatkan ke arah aman).
 // f = faktor kehalusan pembulatan (1, 0.1, 0.01, 0 = satuan rupiah).
+const BOBOT_26B=2;   // bobot 26b dibanding 26d saat membagi saran (26b biasanya porsinya lebih besar)
 function bagiProp(n,ks,d,L,f){
   const fr=ks.filter(k=>!L[k]);
   if(!fr.length||Math.abs(d)<1e-9) return;
   const stp=k=>f===0?1:Math.max(1,Math.pow(10,Math.floor(Math.log10(Math.max(n[k],1)))-1)*f);
-  const tot=fr.reduce((a,k)=>a+n[k],0);
-  fr.sort((a,b)=>n[b]-n[a]);
+  const w=k=>n[k]*(k==='26b'?BOBOT_26B:1);   // 26b mendapat porsi lebih besar daripada 26d
+  const tot=fr.reduce((a,k)=>a+w(k),0);
+  fr.sort((a,b)=>w(b)-w(a));
   const big=fr[0]; let sisa=d; const ch={};
   fr.slice(1).forEach(k=>{
-    const sh=tot>0?d*n[k]/tot:0, s=stp(k);
+    const sh=tot>0?d*w(k)/tot:0, s=stp(k);
     let c=Math.round(sh/s)*s;
     if(n[k]+c<0) c=-n[k];
     ch[k]=c; sisa-=c;
@@ -701,11 +703,18 @@ function renderGen(){
   const ch=ALL.filter(k=>S.awal[k]!==S.adj[k]&&(k!=='28c'||S.pakai28c));
   $('hint26').style.display=S.th26?'block':'none';
   const box=$('gen'); box.innerHTML='';
-  if(!ch.length){box.innerHTML='<div class="box na">Belum ada kolom yang berbeda antara Data Awal dan Adjustment.</div>';}
+  // kalimat tambahan: selisih 26f - 27c dimasukkan ke 27b (hanya bila pengeluaran melebihi pendapatan)
+  const selD=totalSel(k=>nz(parse(S.adj[k]))).sel;
+  const selLine=tampil=>{
+    if(selD<=0.5) return null;
+    const baru=fmtAngka(nz(parse(S.adj['27b']))+selD), awal=fmtAngka(nz(parse(S.awal['27b'])));
+    return tampil?`Mengubah rincian ${lab('27b')} dari ${awal} menjadi ${baru}`:`Mengubah rincian ${lab('27b')} menjadi ${baru}`;
+  };
+  if(!ch.length&&!selLine(true)){box.innerHTML='<div class="box na">Belum ada kolom yang berbeda antara Data Awal dan Adjustment.</div>';}
   else{
     const wrap=document.createElement('div');wrap.className='grid2';
     [['CATATAN PRIBADI [dengan nilai awal]',true],['FASIH/KONFIRMASI [tanpa nilai awal]',false]].forEach(([jd,tampil])=>{
-      const t=ch.map(k=>kalimat(kodeFor(k),lab(k),S.awal[k],S.adj[k],tampil)).filter(Boolean).join('\n');
+      const t=ch.map(k=>kalimat(kodeFor(k),lab(k),S.awal[k],S.adj[k],tampil)).filter(Boolean).concat(selLine(tampil)||[]).join('\n');
       const d=document.createElement('div');
       const head=document.createElement('div');head.className='row';
       head.innerHTML='<b></b>';head.firstChild.textContent=jd;
@@ -941,7 +950,7 @@ with tab_anomali:
             "Perubahan dibagi proporsional ke 28a dan 28b.\n"
             "- **U3**: jika di bawah batas bawah kategori, 26b+26d dikurangi sampai maksimal "
             "Output × (1 − batas bawah); jika di atas batas atas, 26b+26d ditambah sampai minimal "
-            "Output × (1 − batas atas). Perubahan dibagi proporsional ke 26b dan 26d.\n"
+            "Output × (1 − batas atas). Perubahan dibagi proporsional ke 26b dan 26d, dengan 26b diberi bobot 2× sehingga porsinya lebih besar.\n"
             "- **U5**: upah 26a disesuaikan ke batas 0,4 / 0,6 dari NTB.\n"
             "- **Kategori G**: 26c ditampilkan; hanya U3 yang dicek. Jika U3 < batas bawah, 26c maksimal = 27a − (26b+26d) ÷ (1 − batas bawah); "
             "jika U3 > batas atas, 26c minimal = 27a − (26b+26d) ÷ (1 − batas atas). Tersedia alternatif mengambil sebagian perbaikan lewat 26b/26d.\n"
