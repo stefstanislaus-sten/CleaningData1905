@@ -22,10 +22,13 @@ KODE_DC = {
 KODE_UBAH = [k for k in KODE_DC if k != "#0"]  # untuk menu anomali (ada perubahan)
 
 KOLOM = ["26a", "26b", "26c", "26d", "27a", "28a", "28b", "28c"]
+# Kolom tambahan: tidak masuk perhitungan utama (U2-U5), hanya untuk cek selisih 27c vs 26f
+KOLOM_EXTRA = ["27b", "26e"]
 # Nomor kolom pada catatan jika usaha dimulai tahun 2026
 KOLOM_2026 = {
     "26a": "30a", "26b": "30b", "26c": "30c", "26d": "30d",
     "27a": "31a", "28a": "32a", "28b": "32b", "28c": "32c",
+    "27b": "31b", "26e": "30e", "27c": "31c", "26f": "30f",
 }
 
 NAMA_KOLOM = {
@@ -37,6 +40,8 @@ NAMA_KOLOM = {
     "28a": "Nilai aset tanah dan bangunan",
     "28b": "Nilai aset selain tanah dan bangunan",
     "28c": "Nilai total aset (28a + 28b)",
+    "27b": "Pendapatan lainnya",
+    "26e": "Pengeluaran lainnya",
 }
 
 # Interval kewajaran R_NTB/Output [U3] per kategori (None = tidak ada interval)
@@ -261,6 +266,7 @@ select{max-width:100%}
 @media(max-width:520px){select{min-width:0;width:100%}}
 .small{font-size:12px;color:var(--muted)}
 input.ro{background:var(--card);font-weight:600;cursor:default}
+tr.extra td{background:var(--card)}
 .hide-sg .sg-col{display:none}
 .sg{min-width:150px;padding:5px 9px;border:1px dashed var(--line);border-radius:6px;background:var(--card);text-align:right;opacity:.95}
 .nom{cursor:pointer;font-weight:600;user-select:all;-webkit-user-select:all;border-bottom:1px dotted var(--muted)}
@@ -271,9 +277,6 @@ input.ro{background:var(--card);font-weight:600;cursor:default}
 .sg small .nom{font-size:12px;color:var(--fg)}
 .sg small .nom.copied{color:var(--ok)}
 .sg small{display:block;font-size:11px;color:var(--muted);font-weight:400}
-.opt-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:8px 14px;margin:8px 0}
-.opt-grid label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
-.opt-grid select{min-width:0;width:100%;font-size:14px;color:var(--fg)}
 details summary{cursor:pointer;margin:6px 0}
 .tahan{display:block;text-align:right;font-size:11px;color:var(--muted);margin-top:3px;cursor:pointer}
 .tahan input{vertical-align:middle;margin:0 3px 0 0}
@@ -295,50 +298,18 @@ pre{margin:4px 0;padding:10px 12px;background:var(--card);border-radius:8px;whit
 <div class="row"><b>Kategori kewajaran</b><select id="kat"></select>
 <label><input type="checkbox" id="saran"> Tampilkan saran perbaikan?</label></div>
 <details id="saranOpt" style="display:none" open>
-<summary><b>⚙️ Strategi saran</b> <span class="small">(atur kolom mana yang disesuaikan)</span></summary>
-<div class="row"><label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)">Cara membagi saran
-<select id="cara">
-<option value="rata">⚖️ Dibagi rata (sama banyak) ke kolom yang tidak dikunci</option>
-<option value="kecil">🤖 Perubahan terkecil (atur strategi di bawah)</option></select></label></div>
-<div class="small" id="hintRata">⚖️ Penyesuaian ditambahkan/dikurangi <b>sama banyak</b> ke kolom yang tidak dikunci (27a &amp; 26c, 26b &amp; 26d, 28a &amp; 28b, upah &amp; NTB), supaya tidak ada satu kolom yang berubah terlalu besar. Kolom yang dikunci (🔒) tidak diubah, bagiannya dibagi rata ke kolom lain.</div>
-<div id="kecilBox" style="display:none">
-<div class="small">🤖 <b>Otomatis</b> = aplikasi memilih sendiri kolom yang diubah dengan perubahan terkecil, dan nilai yang disarankan dibuat sedekat mungkin dengan batas interval wajar.</div>
-<div class="opt-grid">
-<label>U4 · Output / Aset<select id="strategi">
-<option value="auto">🤖 Otomatis (paling dekat batas wajar)</option>
-<option value="bagi">Bagi proporsional: output &amp; aset</option>
-<option value="aset">Ubah aset saja (output tetap)</option>
-<option value="pendapatan">Ubah output saja (aset tetap)</option></select></label>
-<label>Output dibawa oleh<select id="sR">
-<option value="auto">🤖 Otomatis (paling dekat batas wajar)</option>
-<option value="27a">Pendapatan 27a</option>
-<option value="26c">Biaya pembelian barang 26c</option>
-<option value="bagi">Bagi proporsional 27a &amp; 26c</option></select></label>
-<label>U2 / U3 · NTB / Output (biaya)<select id="sC">
-<option value="auto">🤖 Otomatis (paling dekat batas wajar)</option>
-<option value="bagi">Bagi proporsional 26b &amp; 26d</option>
-<option value="26b">Ubah 26b saja</option>
-<option value="26d">Ubah 26d saja</option>
-<option value="tanpa">Biaya tetap (ubah output)</option></select></label>
-<label>Pembagian aset<select id="sA">
-<option value="auto">🤖 Otomatis (paling dekat batas wajar)</option>
-<option value="bagi">Bagi proporsional 28a &amp; 28b</option>
-<option value="28a">Ubah 28a saja</option>
-<option value="28b">Ubah 28b saja</option></select></label>
-<label>U5 · Upah / NTB<select id="sW">
-<option value="auto">🤖 Otomatis (paling dekat batas wajar)</option>
-<option value="upah">Ubah upah 26a</option>
-<option value="ntb">Upah tetap, ubah NTB (biaya/output)</option>
-<option value="bagi">Bagi proporsional upah &amp; NTB</option></select></label>
-</div></div>
+<summary><b>⚙️ Pengaturan saran</b></summary>
+<div class="small">Urutan saran: <b>U4</b> (aset 28a+28b disesuaikan ke batas 0,2/0,4 dari Output) → <b>U3</b> (biaya 26b+26d disesuaikan ke batas kategori) → <b>U5</b> (upah 26a ke batas 0,4/0,6 dari NTB). Penambahan/pengurangan dibagi proporsional ke kolom terkait dan dibulatkan sesuai skala nilainya (nilai puluhan juta → kelipatan jutaan, nilai jutaan → kelipatan ratusan ribu).</div>
 <label><input type="checkbox" id="kunci"> Otomatis pertahankan kolom yang sudah saya ubah</label>
+<div class="small">Kategori <b>G</b> (perdagangan besar): 26c ditampilkan dan saran hanya untuk U3 (26c disesuaikan, lalu ada alternatif lewat 26b/26d); U4 dan U5 tidak dicek.</div>
 </details>
 <div class="scroll"><table id="tin" class="hide-sg">
 <thead><tr><th>Kolom</th><th>Perhitungan Data Awal</th><th>Perhitungan Data Adjustment</th><th class="num">Perubahan (Adj &minus; Awal)</th><th class="num sg-col">Saran perbaikan perhitungan</th></tr></thead>
 <tbody id="inbody"></tbody></table></div>
 <div id="saranInfo"></div>
+<div id="altG"></div>
 <div class="row"><button id="salin">↩️ Samakan adjustment dengan data awal</button><button id="reset">🗑️ Reset semua isian</button></div>
-<div class="small">Adjustment otomatis mengikuti Data Awal selama belum Anda ubah sendiri. Semua hasil dihitung langsung saat mengetik.</div>
+<div class="small">Adjustment otomatis mengikuti Data Awal selama belum Anda ubah sendiri. Semua hasil dihitung langsung saat mengetik. Kolom 27b &amp; 26e (abu-abu) tidak masuk perhitungan U2–U5, hanya untuk cek selisih total pendapatan (27c) dan total pengeluaran (26f).</div>
 
 <h3>Hasil perhitungan &amp; cek kewajaran (live)</h3>
 <div class="scroll"><table><thead><tr><th>Indikator</th><th>Syarat wajar</th><th class="num">Data Awal</th><th>Status Awal</th><th class="num">Data Adjustment</th><th>Status Adjustment</th><th class="num">Perubahan</th></tr></thead>
@@ -351,19 +322,24 @@ pre{margin:4px 0;padding:10px 12px;background:var(--card);border-radius:8px;whit
 <label><input type="checkbox" id="beda"> Pakai kode DC berbeda untuk tiap kolom</label>
 <label><input type="checkbox" id="p28c"> Sertakan 28c (total aset) dalam kalimat</label>
 <label><input type="checkbox" id="th26"> Usaha dimulai tahun 2026</label></div>
-<div class="small" id="hint26" style="display:none">Nomor kolom pada catatan: 26a→30a, 26b→30b, 26c→30c, 26d→30d, 27a→31a, 28a→32a, 28b→32b, 28c→32c.</div>
+<div class="small" id="hint26" style="display:none">Nomor kolom pada catatan: 26a→30a, 26b→30b, 26c→30c, 26d→30d, 26e→30e, 26f→30f, 27a→31a, 27b→31b, 27c→31c, 28a→32a, 28b→32b, 28c→32c.</div>
 <div id="kk" class="kk"></div>
 <div id="gen"></div>
+<div id="sel"></div>
 </div>
 <script>
 (function(){
-const KOLOM=__KOLOM__, NAMA=__NAMA__, KAT=__KAT__, KODE=__KODE__, KODE_DC=__KODE_DC__, MAP26=__MAP26__;
-const U4=[0.2,0.4], U5=[0.4,0.6], KEY='dc_anomali_state_v4';
+const KOLOM=__KOLOM__, EXTRA=__EXTRA__, NAMA=__NAMA__, KAT=__KAT__, KODE=__KODE__, KODE_DC=__KODE_DC__, MAP26=__MAP26__;
+const ALL=KOLOM.concat(EXTRA);
+const NO26C=['A','B','C','F','H','K','L','N','O','R','Q','S','T'];   // kategori tanpa 26c (otomatis 0)
+function hide26c(){return NO26C.indexOf(S.kat)>=0;}
+const U4=[0.2,0.4], U5=[0.4,0.6], KEY='dc_anomali_state_v5';
 const $=id=>document.getElementById(id);
-let S={kat:'A',awal:{},adj:{},dirty:{},kode:KODE[0],beda:false,kodeKol:{},pakai28c:false,saran:false,th26:false,kunci:true,cara:'rata',strategi:'auto',sR:'auto',sC:'auto',sA:'auto',sW:'auto',tahan:{}};
+let S={kat:'A',awal:{},adj:{},dirty:{},kode:KODE[0],beda:false,kodeKol:{},pakai28c:false,saran:false,th26:false,kunci:true,tahan:{}};
 try{const r=sessionStorage.getItem(KEY); if(r) S=Object.assign(S,JSON.parse(r));}catch(e){}
-KOLOM.forEach(k=>{S.awal[k]=S.awal[k]||'';S.adj[k]=S.adj[k]||'';});
+ALL.forEach(k=>{S.awal[k]=S.awal[k]||'';S.adj[k]=S.adj[k]||'';});
 S.tahan=S.tahan||{};
+let lastSaran=null;
 
 // ---------- tema ----------
 function detectDark(){
@@ -452,6 +428,7 @@ function evaluasi(h){
   return val.map((v,i)=>{
     if(i===0){const ok=v>=0; return {txt:fmtAngka(v),cls:ok?'ok':'bad',stat:ok?'✅ Wajar':'❌ Tidak wajar'};}
     if(i===1) return {txt:fmtAngka(v),cls:'na',stat:'➖ Tanpa syarat'};
+    if(S.kat==='G'&&i>=3) return {txt:v===null?'-':fmtR(v),cls:'na',stat:'➖ Tidak dicek (kategori G)'};
     const s=stRasio(v,iv[i]); return {txt:v===null?'-':fmtR(v),cls:s[0],stat:s[1]};
   });
 }
@@ -463,17 +440,11 @@ function delta(a,b,money){
 }
 
 // ---------- saran perbaikan ----------
-let FR=0.02;  // margin di dalam interval (pecahan lebar interval); kecil = makin dekat batas wajar
-function inOk(r,lo,hi){const x=Math.round(r*1000)/1000;return x>=lo-1e-9&&x<=hi+1e-9;}
-function ratioFix(r,lo,hi){  // rasio terdekat yang wajar (margin kecil di dalam interval)
-  const m=(hi-lo)*FR,l=lo+m,h=hi-m;
-  if(r===null||!isFinite(r)) return h;
-  if(inOk(r,lo,hi)) return r;
-  return r<lo?l:h;
-}
+// Urutan: U4 (aset) -> U3 (biaya 26b+26d) -> U5 (upah). Output = 27a - 26c.
+function r3(x){return Math.round(x*1000)/1000;}
+function inR(r,lo,hi){const x=r3(r);return x>=lo-1e-9&&x<=hi+1e-9;}
 function cekOk(v){
-  const h=hitungV(v);
-  return evaluasi(h).every(e=>e.cls!=='bad'&&e.cls!=='warn');
+  return evaluasi(hitungV(v)).every(e=>e.cls!=='bad'&&e.cls!=='warn');
 }
 function kunciMap(termasukOtomatis){  // terkunci = dipertahankan manual (centang) atau sudah diubah user
   const L={};
@@ -485,220 +456,143 @@ function kunciMap(termasukOtomatis){  // terkunci = dipertahankan manual (centan
   });
   return L;
 }
-const OPSI={strategi:['bagi','aset','pendapatan'],sR:['27a','26c','bagi'],sC:['bagi','26b','26d','tanpa'],sA:['bagi','28a','28b'],sW:['upah','ntb','bagi']};
-const IDS=Object.keys(OPSI);
-function cfgDaftar(cara){  // 'rata': satu konfigurasi bagi-rata; 'semuaauto': semua kombinasi; 'kecil': ikut pilihan pengguna
-  if(cara==='rata') return [{strategi:'bagi',sR:'bagi',sC:'bagi',sA:'bagi',sW:'bagi',rata:true}];
-  let list=[{}];
-  IDS.forEach(id=>{
-    const pil=(cara==='semuaauto'||S[id]==='auto')?OPSI[id]:[S[id]];
-    const nxt=[]; list.forEach(c=>pil.forEach(p=>{const o=Object.assign({},c);o[id]=p;nxt.push(o);})); list=nxt;
+// Bagi perubahan total d ke kolom ks secara proporsional terhadap nilainya.
+// Tiap kolom dibulatkan ke skala nilainya (50 juta -> kelipatan 1 juta; 5 juta -> kelipatan 100 ribu).
+// d>0: total perubahan minimal d; d<0: total perubahan maksimal d (dibulatkan ke arah aman).
+// f = faktor kehalusan pembulatan (1, 0.1, 0.01, 0 = satuan rupiah).
+function bagiProp(n,ks,d,L,f){
+  const fr=ks.filter(k=>!L[k]);
+  if(!fr.length||Math.abs(d)<1e-9) return;
+  const stp=k=>f===0?1:Math.max(1,Math.pow(10,Math.floor(Math.log10(Math.max(n[k],1)))-1)*f);
+  const tot=fr.reduce((a,k)=>a+n[k],0);
+  fr.sort((a,b)=>n[b]-n[a]);
+  const big=fr[0]; let sisa=d; const ch={};
+  fr.slice(1).forEach(k=>{
+    const sh=tot>0?d*n[k]/tot:0, s=stp(k);
+    let c=Math.round(sh/s)*s;
+    if(n[k]+c<0) c=-n[k];
+    ch[k]=c; sisa-=c;
   });
-  return list;
+  const sb=stp(big);
+  let cb=(d>0?Math.ceil(sisa/sb-1e-9):Math.floor(sisa/sb+1e-9))*sb;
+  if(n[big]+cb<0) cb=-n[big];
+  ch[big]=cb;
+  fr.forEach(k=>{n[k]=n[k]+ch[k];});
 }
-function strategiLock(cfg){  // pilihan strategi -> kolom yang "tidak disentuh" ('auto' = tidak ada kunci)
-  cfg=cfg||{};
-  const Lv={};
-  if(cfg.sR==='27a') Lv['26c']=true; else if(cfg.sR==='26c') Lv['27a']=true;
-  if(cfg.sC==='26b') Lv['26d']=true; else if(cfg.sC==='26d') Lv['26b']=true;
-  else if(cfg.sC==='tanpa'){Lv['26b']=true;Lv['26d']=true;}
-  if(cfg.sA==='28a') Lv['28b']=true; else if(cfg.sA==='28b') Lv['28a']=true;
-  if(cfg.sW==='ntb') Lv['26a']=true;
-  return Lv;
-}
-function bagiRata(n,fr,delta){  // sama banyak; kolom yang mentok di 0 berhenti, sisanya dibagi rata ke yang lain
-  let sisa=delta, aktif=fr.slice();
-  for(let it=0;it<6&&aktif.length&&Math.abs(sisa)>1e-9;it++){
-    const share=sisa/aktif.length, lanjut=[]; let pakai=0;
-    aktif.forEach(k=>{
-      let d=share;
-      if(n[k]+d<0) d=-n[k]; else lanjut.push(k);
-      n[k]+=d; pakai+=d;
-    });
-    sisa-=pakai; aktif=lanjut;
-  }
-}
-function bagiOutput(n,v,dR,L){  // perubahan Output: 27a naik a, 26c turun b (a+b=dR), sama banyak
-  const f27=!L['27a'], f26c=!L['26c'];
-  if(f27&&f26c){
-    let a=dR/2,b=dR/2;
-    if(v['26c']-b<0){b=v['26c'];a=dR-b;}
-    if(v['27a']+a<0){a=-v['27a'];b=dR-a; if(v['26c']-b<0) b=v['26c'];}
-    n['27a']=v['27a']+a; n['26c']=v['26c']-b;
-  }else if(f27) n['27a']=v['27a']+dR;
-  else if(f26c) n['26c']=Math.max(0,v['26c']-dR);
-}
-function alloc(n,ks,delta,L,fb,rata){  // bagi perubahan ke kolom yang belum terkunci (rata = sama banyak)
-  if(Math.abs(delta)<1e-9) return;
-  const fr=ks.filter(k=>!L[k]); if(!fr.length) return;
-  if(rata){bagiRata(n,fr,delta);return;}
-  const s=fr.reduce((a,k)=>a+n[k],0);
-  if(s>0) fr.forEach(k=>{n[k]=n[k]+delta*(n[k]/s);});
-  else n[fr.indexOf(fb)>=0?fb:fr[0]]+=delta;
-  fr.forEach(k=>{if(n[k]<0) n[k]=0;});
-}
-function clampR(x,lo,hi){  // jepit ke [lo,hi] dengan margin kecil di dalam
-  if(x>=lo&&x<=hi) return x;
-  const d=isFinite(hi)?(hi-lo)*FR:lo*FR;
-  return x<lo?Math.min(lo+d,hi):Math.max(hi-d,lo);
-}
-function rencana(mode,v,L,relax,cfg){
-  const iv3=KAT[S.kat]||[0.001,1];
-  const A0=v['28a']+v['28b'], R0=v['27a']-v['26c'], C0=v['26b']+v['26d'], W=v['26a'];
-  const bebasA=!(L['28a']&&L['28b']), bebasR=!(L['27a']&&L['26c']), bebasC=!(L['26b']&&L['26d']), bebasW=!L['26a'];
-  const kenaW=!bebasW&&!relax;   // relax: 26a dipertahankan & U5 diabaikan (tidak mungkin wajar)
-
-  // 1) batas nilai Output (R*) yang masih mungkin, mengingat kolom yang terkunci
-  let lo=1e-9, hi=Infinity;
-  const potong=(a,b)=>{if(a>lo) lo=a; if(b<hi) hi=b;};
-  if(!bebasA&&A0>0) potong(U4[0]*A0,U4[1]*A0);                 // aset terkunci -> U4
-  if(!bebasC){                                                  // biaya terkunci -> U3 (& U5)
-    if(iv3[0]<1) potong(C0/(1-iv3[0]),Infinity);
-    if(iv3[1]<1) potong(0,C0/(1-iv3[1]));
-    if(kenaW) potong(C0+W/U5[1],C0+W/U5[0]);
-  }else if(kenaW){                                              // upah terkunci -> U3 & U5
-    if(iv3[0]>0) potong(0,W/(U5[0]*iv3[0]));
-    if(iv3[1]>0) potong(W/(U5[1]*iv3[1]),Infinity);
-  }
-
-  // 2) Output target (R*) menurut strategi U4
-  const r0=(A0>0&&R0>0)?R0/A0:null;
-  const r4=ratioFix(r0,U4[0],U4[1]);
-  let Rp;
-  if(!bebasR) Rp=R0;
-  else if(bebasA){
-    if(mode==='aset') Rp=R0;
-    else if(mode==='pendapatan') Rp=A0>0?r4*A0:R0;
-    else Rp=r0!==null?(cfg.rata?R0-(R0-r4*A0)/(1+r4):R0*Math.sqrt(r4/r0)):(A0>0?r4*A0:R0);   // bagi: output turun x, aset naik x (rata) / geser proporsional
-  }else Rp=A0>0?r4*A0:R0;
-  if(bebasR&&Rp<=0){ if(A0>0) Rp=r4*A0; else return null; }
-  let Rs;
-  if(!bebasR){ if(R0<lo-1e-6||R0>hi+1e-6) return null; Rs=R0; }
-  else{ if(lo>hi) return null; Rs=clampR(Rp,lo,hi); }
-
-  // 3) aset target (A*)
-  let As=A0;
-  if(bebasA) As=Rs/ratioFix(A0>0?Rs/A0:null,U4[0],U4[1]);
-
-  // 4) biaya target (C*) -> NTB target (N*) agar U2 & U3 wajar
-  let Cs=C0;
-  if(bebasC){
-    let nT=ratioFix((Rs-C0)/Rs,iv3[0],iv3[1])*Rs;
-    if(kenaW){
-      const nlo=Math.max(iv3[0]*Rs,W/U5[1]), nhi=Math.min(iv3[1]*Rs,W/U5[0]);
-      nT=clampR(nT,nlo,Math.max(nhi,nlo));
-    }else if(cfg.sW==='bagi'&&bebasW&&W>0&&nT>1e-9){        // upah naik, NTB turun (atau sebaliknya) sama-sama bergeser
-      const r5=W/nT, r5t=ratioFix(r5,U5[0],U5[1]);
-      if(r5t!==r5){
-        if(cfg.rata){const sg=(W-r5t*nT)/(1+r5t); nT=clampR(nT+sg,iv3[0]*Rs,iv3[1]*Rs);}   // upah turun sg, NTB naik sg (atau sebaliknya)
-        else nT=clampR(nT/Math.sqrt(r5t/r5),iv3[0]*Rs,iv3[1]*Rs);
-      }
-    }
-    Cs=Rs-nT;
-  }
-  const Ns=Rs-Cs;
-
-  // 5) upah target (W*) -> U5
-  let Ws=W;
-  if(bebasW&&Ns>1e-9) Ws=ratioFix(W/Ns,U5[0],U5[1])*Ns;
-
-  // 6) terapkan ke kolom (hanya kolom yang belum terkunci)
+// Kategori G (perdagangan besar): hanya U3, dengan 26c sebagai penyeimbang.
+// s = porsi perbaikan yang diambil dari 26b/26d (0 = hanya 26c, 1 = hanya 26b/26d).
+function rencanaG(v,L,f,s){
+  const lo=KAT.G[0], hi=KAT.G[1], notes=[];
   const n=Object.assign({},v);
-  const dR=Rs-R0;                                  // perubahan Output dibawa oleh 27a (+) dan/atau 26c (-)
-  if(Math.abs(dR)>1e-9){
-    const f27=!L['27a'], f26c=!L['26c'];
-    if(cfg.rata) bagiOutput(n,v,dR,L);
-    else if(f27&&f26c){
-      const tot=v['27a']+v['26c'];
-      if(tot>0){let dP=-dR*v['26c']/tot; if(v['26c']+dP<0) dP=-v['26c']; n['26c']=v['26c']+dP; n['27a']=v['27a']+dR+dP;}
-      else n['27a']=v['27a']+dR;
-    }else if(f27) n['27a']=v['27a']+dR;
-    else if(f26c) n['26c']=Math.max(0,v['26c']-dR);
+  const O=v['27a']-v['26c'], C=v['26b']+v['26d'];
+  const u=O>0?(O-C)/O:null;
+  const low=(u===null)||r3(u)<lo-1e-9, high=u!==null&&r3(u)>hi+1e-9;
+  const y26=!L['26c'];
+  if(low){
+    const tgt=v['27a']-C/(1-lo);   // 26c harus sekecil ini (maksimal)
+    notes.push('U3 < '+fmtR(lo)+' → 26c maksimal = 27a − (26b+26d) ÷ (1 − '+fmtR(lo)+') = '+fmtAngka(tgt)+(tgt<0?' (negatif, jadi 26c diturunkan sampai 0 dan sisanya lewat 26b/26d)':'')+'.');
+    const D=Math.max(0,v['26c']-tgt), want=y26?D*(1-s):0;
+    if(want>1e-9) bagiProp(n,['26c'],-want,L,f);
+    const yact=v['26c']-n['26c'], x=C-(1-lo)*(O+yact);
+    if(x>1e-9) bagiProp(n,['26b','26d'],-x,L,f);
+  }else if(high){
+    const tgt=C>0?v['27a']-C/(1-hi):null;   // 26c harus sebesar ini (minimal)
+    notes.push(tgt===null?'U3 > '+fmtR(hi)+' dan 26b+26d = 0 → 26b/26d perlu ditambah.':'U3 > '+fmtR(hi)+' → 26c minimal = 27a − (26b+26d) ÷ (1 − '+fmtR(hi)+') = '+fmtAngka(tgt)+'.');
+    const Dm=tgt===null?0:Math.max(0,tgt-v['26c']), want=(y26&&tgt!==null)?Math.min(Dm*(1-s),O*0.99):0;
+    if(want>1e-9) bagiProp(n,['26c'],want,L,f);
+    const yact=n['26c']-v['26c'], x=(1-hi)*(O-yact)-C;
+    if(x>1e-9) bagiProp(n,['26b','26d'],x,L,f);
   }
-  alloc(n,['26b','26d'],Cs-C0,L,'26b',cfg.rata);
-  alloc(n,['28a','28b'],As-A0,L,'28b',cfg.rata);
-  if(bebasW) n['26a']=Ws;
-  KOLOM.forEach(k=>{ if(Math.abs(n[k]-v[k])<=1e-6*Math.max(1,Math.abs(v[k]))) n[k]=v[k]; });
   n['28c']=n['28a']+n['28b'];
-  return n;
+  return {n:n,notes:notes};
 }
-function bulatkan(n,v,step){
-  const r=Object.assign({},n);
-  KOLOM.forEach(k=>{ if(k!=='28c'&&r[k]!==v[k]) r[k]=Math.round(r[k]/step)*step; });
-  r['28c']=r['28a']+r['28b']; return r;
+function rencana(v,L,f,s){
+  if(S.kat==='G') return rencanaG(v,L,f,s||0);
+  const iv3=KAT[S.kat]||[0,1], notes=[];
+  const n=Object.assign({},v);
+  const O=v['27a']-v['26c'];
+  if(O<=0) return null;
+
+  // --- U4: aset (28a+28b) ---
+  const A=v['28a']+v['28b'];
+  let dA=0;
+  if(A<=0){dA=O/U4[1]; notes.push('U4: aset kosong → 28a+28b minimal = Output ÷ 0,4 = '+fmtAngka(O/U4[1])+'.');}
+  else{
+    const r=O/A;
+    if(r3(r)<U4[0]-1e-9){dA=O/U4[0]-A; notes.push('U4 < 0,2 → 28a+28b maksimal = Output ÷ 0,2 = '+fmtAngka(O/U4[0])+' (dikurangi '+fmtAngka(-dA)+').');}
+    else if(r3(r)>U4[1]+1e-9){dA=O/U4[1]-A; notes.push('U4 > 0,4 → 28a+28b minimal = Output ÷ 0,4 = '+fmtAngka(O/U4[1])+' (ditambah '+fmtAngka(dA)+').');}
+  }
+  if(dA) bagiProp(n,['28a','28b'],dA,L,f);
+
+  // --- U3: biaya (26b+26d); NTB = Output - (26b+26d) ---
+  const C=v['26b']+v['26d'], W=v['26a'], N=O-C;
+  const wKunci=!!L['26a']&&W>0;
+  let nlo=iv3[0]*O, nhi=iv3[1]*O;
+  if(wKunci){const a=Math.max(nlo,W/U5[1]), b=Math.min(nhi,W/U5[0]); if(a<=b){nlo=a;nhi=b;}}
+  const okU3=!KAT[S.kat]||inR(N/O,iv3[0],iv3[1]);
+  const okU5=!wKunci||(N>0&&inR(W/N,U5[0],U5[1]));
+  let dC=0;
+  if(!okU3||!okU5){ if(N<nlo) dC=N-nlo; else if(N>nhi) dC=N-nhi; }
+  if(dC){
+    notes.push('U3'+(wKunci?' (dan U5 karena 26a dipertahankan)':'')+': '+(dC<0?'NTB/Output di bawah batas → 26b+26d maksimal = ':'NTB/Output di atas batas → 26b+26d minimal = ')+fmtAngka(C+dC)+' ('+(dC<0?'dikurangi ':'ditambah ')+fmtAngka(Math.abs(dC))+').');
+    bagiProp(n,['26b','26d'],dC,L,f);
+  }
+
+  // --- U5: upah (26a) ---
+  const N2=O-(n['26b']+n['26d']);
+  if(!L['26a']&&N2>0&&!inR(W/N2,U5[0],U5[1])){
+    const tgt=(W/N2<U5[0]?U5[0]:U5[1])*N2, dW=tgt-W;
+    notes.push('U5: upah 26a '+(dW>0?'minimal = ':'maksimal = ')+fmtAngka(tgt)+' ('+(dW>0?'ditambah ':'dikurangi ')+fmtAngka(Math.abs(dW))+').');
+    bagiProp(n,['26a'],dW,L,f);
+  }
+  n['28c']=n['28a']+n['28b'];
+  return {n:n,notes:notes};
 }
-function cariSaran(v,fr,cara){
-  FR=fr;
+function cariSaranDasar(v,s){
   const Lall=kunciMap(true), Lman=kunciMap(false);
   const kunciA=KOLOM.filter(k=>Lall[k]), kunciM=KOLOM.filter(k=>Lman[k]);
   const lepasA=kunciA.filter(k=>!Lman[k]);
-  const U=(a,b)=>Object.assign({},a,b);
-  const cfgs=cfgDaftar(cara);
-  const adaKunciStrategi=cfgs.some(c=>Object.keys(strategiLock(c)).length>0);
-  const buruk=f=>evaluasi(hitungV(f)).filter(e=>e.cls==='bad'||e.cls==='warn').length;
-  const coba=(Lk,relax,ls)=>{   // ls=true: strategi pilihan dilepas (tidak ada kunci dari strategi)
-    const hasil=[];
-    cfgs.forEach(cfg=>{
-      const Lv=ls?{}:strategiLock(cfg), Lg=U(Lk,Lv);
-      const n=rencana(cfg.strategi,v,Lg,relax,cfg); if(!n) return;
-      let f=n,ok=false;
-      for(const stp of [1000,100,10,1]){ f=bulatkan(n,v,stp); ok=cekOk(f); if(ok) break; }
-      let tot=0; KOLOM.forEach(k=>{if(k!=='28c') tot+=Math.abs(f[k]-v[k]);});
-      hasil.push({cfg:cfg,n:f,ok:ok,tot:tot,w5:!!(relax&&Lg['26a'])});
-    });
-    hasil.sort((a,b)=>((b.ok?1:0)-(a.ok?1:0))||(a.tot-b.tot));   // urutan sama -> pilihan lebih awal menang
-    return hasil;
-  };
-  // urutan percobaan: (1) semua kunci & strategi dihormati, (2) lepas kunci "sudah diubah",
-  // (3) lepas strategi, (4) lepas keduanya. Kunci centang "pertahankan" tidak pernah dilepas.
-  const percobaan=[{Lk:Lall,kunci:kunciA,dilepas:[],ls:false}];
-  if(lepasA.length) percobaan.push({Lk:Lman,kunci:kunciM,dilepas:lepasA,ls:false});
-  if(adaKunciStrategi){
-    percobaan.push({Lk:Lall,kunci:kunciA,dilepas:[],ls:true});
-    if(lepasA.length) percobaan.push({Lk:Lman,kunci:kunciM,dilepas:lepasA,ls:true});
+  const tries=[{L:Lall,kunci:kunciA,dilepas:[]}];
+  if(lepasA.length) tries.push({L:Lman,kunci:kunciM,dilepas:lepasA});   // kolom "sudah diubah" dilepas bila tidak cukup
+  let best=null;
+  for(const p of tries){
+    for(const f of [1,0.1,0.01,0]){
+      const R=rencana(v,p.L,f,s);
+      if(!R) return {tipe:'tidak',v:v};
+      const ev=evaluasi(hitungV(R.n)), bad=ev.filter(e=>e.cls==='bad'||e.cls==='warn').length;
+      const c={v:v,n:R.n,notes:R.notes,kunci:p.kunci,dilepas:p.dilepas,w5:!!p.L['26a'],bad:bad};
+      if(bad===0) return Object.assign(c,{tipe:'ok'});
+      if(f===0&&(!best||bad<best.bad)) best=c;
+    }
   }
-  const kand=[];
-  const jalan=(p,relax)=>{
-    const h=coba(p.Lk,relax,p.ls); if(!h.length) return false;
-    const c=Object.assign({},h[0],{kunci:p.kunci,dilepas:p.dilepas,ls:p.ls,bad:h[0].ok?0:buruk(h[0].n)});
-    kand.push(c); return c.ok;
-  };
-  let ketemu=false;
-  for(const p of percobaan){ if(jalan(p,false)){ketemu=true;break;} }
-  if(!ketemu) for(const p of percobaan){ if(jalan(p,true)) break; }   // upah ditahan -> abaikan U5
-  if(!kand.length) return {tipe:'tidak',v:v};
-  let best=kand.find(c=>c.ok);
-  if(!best) best=kand.reduce((a,b)=>b.bad<a.bad?b:a);
-  return {tipe:best.ok?'ok':'sebagian',v:v,n:best.n,mode:best.cfg.strategi,cfg:best.cfg,rata:!!best.cfg.rata,fr:fr,kunci:best.kunci,dilepas:best.dilepas,ls:best.ls,w5:best.w5};
+  return Object.assign(best,{tipe:'sebagian'});
+}
+function cariSaran(v){
+  const r=cariSaranDasar(v,0);
+  if(S.kat==='G'&&(r.tipe==='ok'||r.tipe==='sebagian')) r.alts=[0.5,1].map(s=>({s:s,r:cariSaranDasar(v,s)}));
+  return r;
 }
 function sarankan(){
   const v={};let any=false;
   KOLOM.forEach(k=>{const x=parse(S.adj[k]); if(k!=='28c'&&x!==null) any=true; v[k]=nz(x);});
   if(!any) return {tipe:'kosong'};
   if(cekOk(v)) return {tipe:'wajar',v};
-  if(S.cara==='rata'){                                // dibagi rata (sama banyak) ke kolom yang tidak dikunci
-    let r=cariSaran(v,0.003,'rata');
-    if(r.tipe!=='ok'){const r2=cariSaran(v,0.02,'rata'); if(r2.tipe==='ok') r=r2;}
-    if(r.tipe!=='ok'){                                // pembagian rata tidak cukup -> perubahan terkecil
-      let rk=cariSaran(v,0.003,'semuaauto');
-      if(rk.tipe!=='ok'){const rk2=cariSaran(v,0.02,'semuaauto'); if(rk2.tipe==='ok') rk=rk2;}
-      if(rk.tipe==='ok'||r.tipe==='tidak'){rk.fallback=true; r=rk;}
-    }
-    return r;
-  }
-  const adaAuto=IDS.some(id=>S[id]==='auto');
-  let r=cariSaran(v,adaAuto?0.003:0.02,'kecil');    // otomatis: sedekat mungkin dengan batas interval
-  if(adaAuto&&r.tipe!=='ok'){                         // jaga-jaga: coba lagi dengan margin lebih aman
-    const r2=cariSaran(v,0.02,'kecil');
-    if(r2.tipe==='ok'||r.tipe==='tidak') r=r2;
-  }
-  return r;
+  return cariSaran(v);
+}
+
+// ---------- total pendapatan (27c) & pengeluaran (26f) ----------
+function totalSel(g){
+  const t27=g('27a')+g('27b'), t26=g('26a')+g('26b')+g('26c')+g('26d')+g('26e');
+  return {t27:t27,t26:t26,sel:t26-t27};   // sel>0 -> pengeluaran melebihi pendapatan
+}
+function komentarSel(sel){
+  return 'Masukkan selisih '+fmtAngka(sel)+' ini ke dalam '+lab('27b')+' Pendapatan lainnya';
 }
 
 // ---------- render ----------
 const NAMA_IND=['NTB [U2]','Output','R_NTB/Output [U3]','R_Output/Aset [U4]','R_Upah/NTB [U5]'];
 function renderDeltaCols(){
-  KOLOM.forEach(k=>{
+  ALL.forEach(k=>{
     const e=$('x_'+k);
     if(!S.awal[k]&&!S.adj[k]){e.textContent='';e.className='';return;}
     const d=delta(nz(parse(S.awal[k])),nz(parse(S.adj[k])),true);
@@ -729,21 +623,15 @@ function renderResult(){
   });
   $('ringkas').innerHTML=r;
 }
-const LBL={
-  strategi:{bagi:'output & aset digeser bersama',aset:'aset diubah, output tetap',pendapatan:'output diubah, aset tetap'},
-  sR:{'27a':'output lewat 27a','26c':'output lewat 26c',bagi:'output lewat 27a & 26c'},
-  sC:{bagi:'biaya 26b & 26d dibagi','26b':'biaya lewat 26b','26d':'biaya lewat 26d',tanpa:'biaya tetap'},
-  sA:{bagi:'aset 28a & 28b dibagi','28a':'aset lewat 28a','28b':'aset lewat 28b'},
-  sW:{upah:'upah 26a diubah',ntb:'upah 26a tetap',bagi:'upah & NTB dibagi'}
-};
 function renderSaran(){
   $('tin').classList.toggle('hide-sg',!S.saran);
   $('saranOpt').style.display=S.saran?'block':'none';
-  $('kecilBox').style.display=(S.cara==='kecil')?'block':'none';
-  $('hintRata').style.display=(S.cara==='rata')?'block':'none';
   const info=$('saranInfo'); info.innerHTML='';
+  $('altG').innerHTML='';
+  lastSaran=null;
   if(!S.saran) return;
-  const r=sarankan(), L=kunciMap(true), LM=kunciMap(false), ubah=[];
+  const r=sarankan(); lastSaran=r;
+  const L=kunciMap(true), LM=kunciMap(false), ubah=[];
   KOLOM.forEach(k=>{
     const e=$('s_'+k); let d=0;
     if(r.n) d=r.n[k]-r.v[k];
@@ -757,33 +645,36 @@ function renderSaran(){
   let msg='',cls='na';
   if(r.tipe==='kosong'){msg='Isi data dulu untuk melihat saran.';}
   else if(r.tipe==='wajar'){msg='✅ Data Adjustment sudah wajar, tidak ada saran perbaikan.';cls='ok';}
-  else if(r.tipe==='tidak'){msg='⚠️ Saran belum bisa dihitung. Pastikan 27a lebih besar dari 26c, atau isi nilai aset (28a/28b).';cls='warn';}
+  else if(r.tipe==='tidak'){msg='⚠️ Saran belum bisa dihitung. Pastikan 27a lebih besar dari 26c (Output harus positif).';cls='warn';}
   else{
-    const strategi={
-      bagi:'U4 diperbaiki dengan menggeser output (27a/26c) dan aset (28a/28b) secara proporsional; biaya (26b/26d) dan upah (26a) disesuaikan seperlunya.',
-      aset:'Output dipertahankan; aset (28a/28b), biaya (26b/26d), dan upah (26a) disesuaikan seperlunya.',
-      pendapatan:'Aset dipertahankan; output (27a/26c), biaya (26b/26d), dan upah (26a) disesuaikan seperlunya.'
-    }[r.mode];
-    const rata=!!r.rata;
-    const autoIds=rata?[]:(r.fallback?IDS:(S.cara==='kecil'?IDS.filter(id=>S[id]==='auto'):[]));
-    const oto=autoIds.length?' 🤖 Pilihan otomatis: '+autoIds.map(id=>LBL[id][r.cfg[id]]).join('; ')+(r.fr<0.01?'. Nilai disarankan sedekat mungkin dengan batas interval wajar.':'.'):'';
-    const sblm=(r.kunci&&r.kunci.length)?' 🔒 Kolom yang dipertahankan/sudah Anda ubah ('+r.kunci.join(', ')+') tidak diubah; sisa penyesuaian '+(rata?'dibagi rata':'dibagi proporsional')+' ke kolom lain yang tidak dikunci.':'';
+    const sblm=(r.kunci&&r.kunci.length)?' 🔒 Kolom yang dipertahankan/sudah Anda ubah ('+r.kunci.join(', ')+') tidak diubah; penyesuaian dibagi proporsional ke kolom lain.':'';
     const dl=(r.dilepas||[]).filter(k=>ubah.indexOf(k)>=0);
     const lps=dl.length?' ⚠️ Kolom yang sudah Anda ubah ('+dl.join(', ')+') saja tidak cukup, jadi ikut disesuaikan.':'';
-    const sl=r.ls?Object.keys(strategiLock(S)).filter(k=>ubah.indexOf(k)>=0):[];
-    const sls=sl.length?' ⚠️ Strategi pilihan Anda saja tidak cukup, jadi saran juga mengubah '+sl.join(', ')+'.':'';
-    const fbk=r.fallback?' ⚠️ Pembagian rata saja belum cukup membuat U2–U5 wajar, jadi dipakai perubahan terkecil.':'';
-    const kk=fbk+oto+sblm+lps+sls;
-    if(r.tipe==='ok'){msg='✅ Jika saran diterapkan, U2–U5 semua wajar. Kolom yang disarankan berubah: '+ubah.join(', ')+'. '+(rata?'⚖️ Penyesuaian dibagi rata (sama banyak) ke kolom yang tidak dikunci.':(autoIds.indexOf('strategi')>=0?'':strategi))+kk;cls='ok';}
+    const nt=(r.notes&&r.notes.length)?' '+r.notes.join(' '):'';
+    if(r.tipe==='ok'){msg='✅ Jika saran diterapkan, U2–U5 semua wajar. Kolom yang berubah: '+ubah.join(', ')+'.'+nt+sblm+lps;cls='ok';}
     else{
       const ev=evaluasi(hitungV(r.n));
       const sisa=ev.map((e,i)=>(e.cls==='bad'||e.cls==='warn')?NAMA_IND[i]:null).filter(Boolean);
       const w5=sisa.some(x=>x.indexOf('U5')>=0)&&!!r.w5;
-      msg='⚠️ Saran terbaik masih menyisakan: '+sisa.join(', ')+(w5?'':' (mis. karena kategori yang dipilih)')+'. Kolom yang berubah: '+ubah.join(', ')+'.'+kk
-        +(w5?' U5 = 26a ÷ NTB harus 0,4–0,6, jadi tidak bisa wajar selama 26a dipertahankan di '+fmtAngka(r.v['26a'])+'. Hilangkan centang "pertahankan" pada 26a (atau ubah strategi U5 menjadi Ubah upah 26a) jika ingin U5 ikut wajar.':'');cls='warn';
+      msg='⚠️ Saran terbaik masih menyisakan: '+sisa.join(', ')+(w5?'':' (mis. karena kategori yang dipilih)')+'. Kolom yang berubah: '+ubah.join(', ')+'.'+nt+sblm+lps
+        +(w5?' U5 = 26a ÷ NTB harus 0,4–0,6, jadi tidak bisa wajar selama 26a dipertahankan di '+fmtAngka(r.v['26a'])+'. Hilangkan centang "pertahankan" pada 26a jika ingin U5 ikut wajar.':'');cls='warn';
     }
   }
   info.innerHTML=`<div class="box ${cls}"></div>`; info.firstChild.textContent=msg;
+  if(S.kat==='G'&&r.alts&&r.n){   // alternatif: sebagian perbaikan diambil dari 26b/26d
+    let h='<div class="box na"><b>💡 Alternatif bila nilai 26c hasil hitung terasa kurang masuk akal</b><div class="small">Sebagian perbaikan dipindahkan ke 26b dan 26d (dibagi proporsional, dibulatkan sesuai skala nilainya). Klik nominal untuk menyalin.</div>';
+    r.alts.forEach(a=>{
+      const q=a.r; if(!q||!q.n) return;
+      const bad=evaluasi(hitungV(q.n)).some(e=>e.cls==='bad'||e.cls==='warn');
+      const items=['26c','26b','26d'].map(k=>{
+        const d=q.n[k]-q.v[k]; if(Math.abs(d)<0.5) return null;
+        return `${k}: <span class="${d>0?'up':'down'}">${d>0?'tambah ':'kurangi '}<span class="nom" data-val="${plainNum(Math.abs(d))}">${fmtAngka(Math.abs(d))}</span></span> (menjadi <span class="nom" data-val="${plainNum(q.n[k])}">${fmtAngka(q.n[k])}</span>)`;
+      }).filter(Boolean);
+      if(!items.length) return;
+      h+=`<div style="margin-top:6px"><b>${a.s>=1?'Seluruhnya lewat 26b &amp; 26d (26c tetap)':'Dibagi: sebagian 26c, sebagian 26b &amp; 26d'}</b>${bad?' ⚠️ belum wajar':' ✅ U3 wajar'}<br>${items.join('<br>')}</div>`;
+    });
+    $('altG').innerHTML=h+'</div>';
+  }
 }
 function lab(k){return S.th26?(MAP26[k]||k):k;}   // nomor kolom pada catatan (usaha mulai 2026 -> 30a..32c)
 function kodeFor(k){return S.beda?(S.kodeKol[k]||S.kode):S.kode;}
@@ -807,26 +698,61 @@ function salinNominal(el){  // nilai disalin dari data-val (angka polos), tampil
   salinKe(el.getAttribute('data-val'),()=>{el.classList.add('copied');setTimeout(()=>el.classList.remove('copied'),1300);});
 }
 function renderGen(){
-  const ch=KOLOM.filter(k=>S.awal[k]!==S.adj[k]&&(k!=='28c'||S.pakai28c));
+  const ch=ALL.filter(k=>S.awal[k]!==S.adj[k]&&(k!=='28c'||S.pakai28c));
   $('hint26').style.display=S.th26?'block':'none';
   const box=$('gen'); box.innerHTML='';
-  if(!ch.length){box.innerHTML='<div class="box na">Belum ada kolom yang berbeda antara Data Awal dan Adjustment.</div>';return;}
-  const wrap=document.createElement('div');wrap.className='grid2';
-  [['CATATAN PRIBADI [dengan nilai awal]',true],['FASIH/KONFIRMASI [tanpa nilai awal]',false]].forEach(([jd,tampil])=>{
-    const t=ch.map(k=>kalimat(kodeFor(k),lab(k),S.awal[k],S.adj[k],tampil)).filter(Boolean).join('\n');
+  if(!ch.length){box.innerHTML='<div class="box na">Belum ada kolom yang berbeda antara Data Awal dan Adjustment.</div>';}
+  else{
+    const wrap=document.createElement('div');wrap.className='grid2';
+    [['CATATAN PRIBADI [dengan nilai awal]',true],['FASIH/KONFIRMASI [tanpa nilai awal]',false]].forEach(([jd,tampil])=>{
+      const t=ch.map(k=>kalimat(kodeFor(k),lab(k),S.awal[k],S.adj[k],tampil)).filter(Boolean).join('\n');
+      const d=document.createElement('div');
+      const head=document.createElement('div');head.className='row';
+      head.innerHTML='<b></b>';head.firstChild.textContent=jd;
+      const b=document.createElement('button');b.textContent='Salin';b.onclick=()=>copyText(t,b);head.appendChild(b);
+      const pre=document.createElement('pre');pre.textContent=t;
+      d.appendChild(head);d.appendChild(pre);wrap.appendChild(d);
+    });
+    box.appendChild(wrap);
+  }
+  renderSel();
+}
+function renderSel(){   // warning 27c (total pendapatan) vs 26f (total pengeluaran)
+  const box=$('sel'); box.innerHTML='';
+  if(!ALL.some(k=>S.awal[k]||S.adj[k])) return;
+  const gA=k=>nz(parse(S.awal[k])), gD=k=>nz(parse(S.adj[k]));
+  const A=totalSel(gA), D=totalSel(gD);
+  const c=s=>s>0.5?'bad':'ok';
+  box.innerHTML=`<h3>Cek total pendapatan (${lab('27c')}) &amp; total pengeluaran (${lab('26f')})</h3>
+  <div class="scroll"><table><thead><tr><th>Total</th><th class="num">Data Awal</th><th class="num">Data Adjustment</th></tr></thead><tbody>
+  <tr><td><b>${lab('27c')}</b> Total pendapatan (27a + 27b)</td><td class="num">${fmtAngka(A.t27)}</td><td class="num">${fmtAngka(D.t27)}</td></tr>
+  <tr><td><b>${lab('26f')}</b> Total pengeluaran (26a + 26b + 26c + 26d + 26e)</td><td class="num">${fmtAngka(A.t26)}</td><td class="num">${fmtAngka(D.t26)}</td></tr>
+  <tr><td>Selisih (${lab('26f')} − ${lab('27c')})</td><td class="num"><span class="tag ${c(A.sel)}">${fmtAngka(A.sel)}</span></td><td class="num"><span class="tag ${c(D.sel)}">${fmtAngka(D.sel)}</span></td></tr>
+  </tbody></table></div>`;
+  const tambah=(jd,sel)=>{
     const d=document.createElement('div');
-    const head=document.createElement('div');head.className='row';
-    head.innerHTML='<b></b>';head.firstChild.textContent=jd;
-    const b=document.createElement('button');b.textContent='Salin';b.onclick=()=>copyText(t,b);head.appendChild(b);
-    const pre=document.createElement('pre');pre.textContent=t;
-    d.appendChild(head);d.appendChild(pre);wrap.appendChild(d);
-  });
-  box.appendChild(wrap);
+    if(sel>0.5){
+      const t=komentarSel(sel);
+      d.className='box warn';
+      const s=document.createElement('div');s.textContent='⚠️ '+jd+': total pengeluaran melebihi total pendapatan.';
+      const pre=document.createElement('pre');pre.textContent=t;
+      const b=document.createElement('button');b.textContent='Salin komentar';b.onclick=()=>copyText(t,b);
+      d.appendChild(s);d.appendChild(pre);d.appendChild(b);
+    }else{
+      d.className='box ok';d.textContent='✅ '+jd+': total pendapatan sudah mencukupi total pengeluaran.';
+    }
+    box.appendChild(d);
+  };
+  tambah('Data Adjustment',D.sel);
+  if(S.saran&&lastSaran&&lastSaran.n){
+    const SG=totalSel(k=>lastSaran.n[k]!==undefined?lastSaran.n[k]:gD(k));
+    tambah('Jika saran perbaikan diterapkan',SG.sel);
+  }
 }
 function buildKodeKol(){
   const c=$('kk');c.innerHTML='';
   if(!S.beda) return;
-  KOLOM.filter(k=>k!=='28c'||S.pakai28c).forEach(k=>{
+  ALL.filter(k=>(k!=='28c'||S.pakai28c)&&!(k==='26c'&&hide26c())).forEach(k=>{
     const d=document.createElement('div');d.textContent=lab(k);
     const s=document.createElement('select');
     KODE.forEach(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;s.appendChild(o);});
@@ -836,8 +762,15 @@ function buildKodeKol(){
   });
 }
 function save(){try{sessionStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
-function fit(){}  // tinggi iframe diatur tetap dari sisi Python
-function update(){renderDeltaCols();renderResult();renderSaran();renderGen();save();fit();}
+function apply26c(){   // kategori tanpa 26c: kolom disembunyikan dan nilainya 0 (dikosongkan)
+  const h=hide26c();
+  $('r_26c').style.display=h?'none':'';
+  if(h){
+    S.awal['26c']='';S.adj['26c']='';S.dirty['26c']=false;S.tahan['26c']=false;
+    $('a_26c').value='';$('d_26c').value='';$('h_26c').checked=false;
+  }
+}
+function update(){apply26c();renderDeltaCols();renderResult();renderSaran();renderGen();save();}
 
 // ---------- init ----------
 Object.keys(KAT).forEach(k=>{
@@ -846,36 +779,41 @@ Object.keys(KAT).forEach(k=>{
   o.textContent='Kategori '+k+' ('+(iv?fmtR(iv[0]).slice(0,4)+' – '+fmtR(iv[1]).slice(0,4):'-')+')';
   $('kat').appendChild(o);
 });
-$('kat').value=S.kat; $('kat').onchange=()=>{S.kat=$('kat').value;update();};
+$('kat').value=S.kat; $('kat').onchange=()=>{S.kat=$('kat').value;buildKodeKol();update();};
 KODE.forEach(x=>{const o=document.createElement('option');o.value=x;o.textContent=x+' — '+KODE_DC[x];$('kode').appendChild(o);});
 $('kode').value=S.kode; $('kode').onchange=()=>{S.kode=$('kode').value;update();};
 $('saran').checked=S.saran; $('saran').onchange=()=>{S.saran=$('saran').checked;update();};
-$('cara').value=S.cara; $('cara').onchange=()=>{S.cara=$('cara').value;update();};
 $('kunci').checked=S.kunci; $('kunci').onchange=()=>{S.kunci=$('kunci').checked;update();};
-IDS.forEach(id=>{$(id).value=S[id]; $(id).onchange=()=>{S[id]=$(id).value;update();};});
 $('th26').checked=S.th26; $('th26').onchange=()=>{S.th26=$('th26').checked;buildKodeKol();update();};
 $('p28c').checked=S.pakai28c; $('p28c').onchange=()=>{S.pakai28c=$('p28c').checked;buildKodeKol();update();};
 $('beda').checked=S.beda; $('beda').onchange=()=>{S.beda=$('beda').checked;buildKodeKol();update();};
 
 let rows='';
 KOLOM.forEach(k=>{
-  rows+=`<tr><td><b>${k}</b> ${NAMA[k]}</td>
+  rows+=`<tr id="r_${k}"><td><b>${k}</b> ${NAMA[k]}</td>
   <td><input type="text" id="a_${k}" inputmode="decimal" autocomplete="off" placeholder="0"${k==='28c'?' readonly tabindex="-1" class="ro"':''}></td>
   <td><input type="text" id="d_${k}" inputmode="decimal" autocomplete="off" placeholder="0"${k==='28c'?' readonly tabindex="-1" class="ro"':''}></td>
   <td class="num"><span id="x_${k}"></span></td>
   <td class="sg-col"><div class="sg" id="s_${k}">—</div>${k==='28c'?'':`<label class="tahan"><input type="checkbox" id="h_${k}"> pertahankan nilai ini</label>`}</td></tr>`;
 });
+EXTRA.forEach(k=>{   // kolom tambahan: tidak masuk perhitungan utama
+  rows+=`<tr class="extra"><td><b>${k}</b> ${NAMA[k]} <span class="small">(tidak masuk perhitungan utama)</span></td>
+  <td><input type="text" id="a_${k}" inputmode="decimal" autocomplete="off" placeholder="0"></td>
+  <td><input type="text" id="d_${k}" inputmode="decimal" autocomplete="off" placeholder="0"></td>
+  <td class="num"><span id="x_${k}"></span></td>
+  <td class="sg-col"></td></tr>`;
+});
 $('inbody').innerHTML=rows;
-$('tin').addEventListener('click',e=>{   // klik nominal saran -> salin
+['tin','altG'].forEach(id=>$(id).addEventListener('click',e=>{   // klik nominal saran -> salin
   const el=e.target&&e.target.closest?e.target.closest('.nom'):null;
   if(el) salinNominal(el);
-});
+}));
 KOLOM.forEach(k=>{
   const h=$('h_'+k); if(!h) return;
   h.checked=!!S.tahan[k];
   h.onchange=()=>{S.tahan[k]=h.checked;update();};
 });
-KOLOM.forEach(k=>{
+ALL.forEach(k=>{
   const a=$('a_'+k),d=$('d_'+k);
   a.value=S.awal[k]; d.value=S.adj[k];
   if(k==='28c') return;  // total otomatis, tidak diketik
@@ -890,8 +828,8 @@ KOLOM.forEach(k=>{
     syncTotal(); update();
   });
 });
-$('salin').onclick=()=>{KOLOM.forEach(k=>{S.adj[k]=S.awal[k];S.dirty[k]=false;$('d_'+k).value=S.adj[k];});syncTotal();update();};
-$('reset').onclick=()=>{KOLOM.forEach(k=>{S.awal[k]='';S.adj[k]='';S.dirty[k]=false;S.tahan[k]=false;$('a_'+k).value='';$('d_'+k).value='';if($('h_'+k))$('h_'+k).checked=false;});syncTotal();update();};
+$('salin').onclick=()=>{ALL.forEach(k=>{S.adj[k]=S.awal[k];S.dirty[k]=false;$('d_'+k).value=S.adj[k];});syncTotal();update();};
+$('reset').onclick=()=>{ALL.forEach(k=>{S.awal[k]='';S.adj[k]='';S.dirty[k]=false;S.tahan[k]=false;$('a_'+k).value='';$('d_'+k).value='';if($('h_'+k))$('h_'+k).checked=false;});syncTotal();update();};
 buildKodeKol(); syncTotal(); update();
 window.__S=()=>S;
 })();
@@ -899,12 +837,13 @@ window.__S=()=>S;
 """
 
 
-TINGGI_ANOMALI = 1950  # piksel; jika isi lebih panjang, bisa digulir di dalam kotak
+TINGGI_ANOMALI = 2300  # piksel; jika isi lebih panjang, bisa digulir di dalam kotak
 
 
 def render_anomali():
     isi = (
         HTML_ANOMALI.replace("__KOLOM__", json.dumps(KOLOM))
+        .replace("__EXTRA__", json.dumps(KOLOM_EXTRA))
         .replace("__NAMA__", json.dumps(NAMA_KOLOM, ensure_ascii=False))
         .replace("__KAT__", json.dumps(KATEGORI))
         .replace("__KODE__", json.dumps(KODE_UBAH))
@@ -996,13 +935,21 @@ with tab_anomali:
             "- **R_Upah/NTB [U5]** = 26a / NTB → wajar jika **0,400 – 0,600**\n\n"
             "Rasio dibulatkan ke 3 digit di belakang koma sebelum dicek terhadap interval. "
             "Titik = pemisah ribuan, koma = desimal.\n\n"
-            "**Saran perbaikan**: centang *Tampilkan saran perbaikan?* untuk memunculkan kolom "
-            "saran (nominal tambah/kurangi per kolom agar U2–U5 wajar). Kolom yang sudah Anda ubah "
-            "di Adjustment, atau yang Anda centang *pertahankan nilai ini*, tidak diubah; sisa penyesuaian dibagi rata ke kolom lain yang tidak dikunci.\n\n"
-            "**Cara membagi saran**: *⚖️ Dibagi rata* (bawaan) menambah/mengurangi sama banyak ke kolom yang tidak dikunci, "
-            "jadi tidak ada satu kolom yang berubah terlalu besar; *🤖 Perubahan terkecil* memakai strategi di bawah.\n\n"
-            "**Strategi saran**: pilihan *🤖 Otomatis* membuat aplikasi memilih sendiri kolom yang diubah "
-            "dengan perubahan terkecil, dengan nilai sedekat mungkin ke batas interval wajar. "
-            "Klik nominal pada kolom saran untuk menyalinnya (angka polos, tanpa titik)."
+            "**Logika saran perbaikan** (urutan U4 → U3 → U5):\n"
+            "- **U4**: jika < 0,2 maka 28a+28b dikurangi sampai maksimal Output ÷ 0,2; "
+            "jika > 0,4 maka 28a+28b ditambah sampai minimal Output ÷ 0,4. "
+            "Perubahan dibagi proporsional ke 28a dan 28b.\n"
+            "- **U3**: jika di bawah batas bawah kategori, 26b+26d dikurangi sampai maksimal "
+            "Output × (1 − batas bawah); jika di atas batas atas, 26b+26d ditambah sampai minimal "
+            "Output × (1 − batas atas). Perubahan dibagi proporsional ke 26b dan 26d.\n"
+            "- **U5**: upah 26a disesuaikan ke batas 0,4 / 0,6 dari NTB.\n"
+            "- **Kategori G**: 26c ditampilkan; hanya U3 yang dicek. Jika U3 < batas bawah, 26c maksimal = 27a − (26b+26d) ÷ (1 − batas bawah); "
+            "jika U3 > batas atas, 26c minimal = 27a − (26b+26d) ÷ (1 − batas atas). Tersedia alternatif mengambil sebagian perbaikan lewat 26b/26d.\n"
+            "- Pembulatan mengikuti skala nilai kolom (mis. 50 juta → kelipatan jutaan; 5 juta → kelipatan ratusan ribu).\n"
+            "- Kolom yang sudah Anda ubah di Adjustment, atau yang dicentang *pertahankan nilai ini*, tidak diubah. "
+            "Klik nominal pada kolom saran untuk menyalinnya (angka polos, tanpa titik).\n\n"
+            "**Cek 27c & 26f**: 27c = 27a + 27b (total pendapatan), 26f = 26a + 26b + 26c + 26d + 26e (total pengeluaran). "
+            "Kolom 27b dan 26e tidak masuk perhitungan U2–U5. Jika hasil adjustment membuat total pengeluaran melebihi total pendapatan, "
+            "muncul komentar untuk memasukkan selisihnya ke 27b Pendapatan lainnya."
         )
     render_anomali()
