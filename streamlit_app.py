@@ -304,11 +304,11 @@ pre{margin:4px 0;padding:10px 12px;background:var(--card);border-radius:8px;whit
 <div class="small">Kategori <b>G</b> (perdagangan besar): 26c ditampilkan dan saran untuk U3 (26c disesuaikan, lalu ada alternatif lewat 26b/26d) U4 (aset 28a/28b), dan U5 (upah 26a).</div>
 </details>
 <div class="scroll"><table id="tin" class="hide-sg">
-<thead><tr><th>Kolom</th><th>Perhitungan Data Awal</th><th>Perhitungan Data Adjustment</th><th class="num">Perubahan (Adj &minus; Awal)</th><th class="num sg-col">Saran perbaikan perhitungan</th></tr></thead>
+<thead><tr><th>Kolom</th><th>Perhitungan Data Awal</th><th>Perhitungan Data Adjustment</th><th class="num sg-col">Nilai saran (wajar)</th><th class="num">Perubahan (Adj &minus; Awal)</th><th class="num sg-col">Saran perbaikan perhitungan</th></tr></thead>
 <tbody id="inbody"></tbody></table></div>
 <div id="saranInfo"></div>
 <div id="altG"></div>
-<div class="row"><button id="salin">↩️ Samakan adjustment dengan data awal</button><button id="reset">🗑️ Reset semua isian</button><button id="resetKat">🗑️ Reset semua isian + Kategori Kewajaran</button></div>
+<div class="row"><button id="terapkan" style="display:none">✅ Terapkan semua nilai saran ke Adjustment</button><button id="salin">↩️ Samakan adjustment dengan data awal</button><button id="reset">🗑️ Reset semua isian</button><button id="resetKat">🗑️ Reset semua isian + Kategori Kewajaran</button></div>
 <div class="small">Adjustment otomatis mengikuti Data Awal selama belum Anda ubah sendiri. Semua hasil dihitung langsung saat mengetik. Kolom 27b &amp; 26e (abu-abu) tidak masuk perhitungan U2–U5, hanya untuk cek selisih total pendapatan (27c) dan total pengeluaran (26f).</div>
 
 <h3>Hasil perhitungan &amp; cek kewajaran (live)</h3>
@@ -650,13 +650,20 @@ function renderSaran(){
   $('saranOpt').style.display=S.saran?'block':'none';
   const info=$('saranInfo'); info.innerHTML='';
   $('altG').innerHTML='';
+  $('terapkan').style.display='none';
+  KOLOM.forEach(k=>{$('v_'+k).innerHTML='—';});
   lastSaran=null;
   if(!S.saran) return;
   const r=sarankan(); lastSaran=r;
+  if(r.n) $('terapkan').style.display='';
   const L=kunciMap(true), LM=kunciMap(false), ubah=[];
   KOLOM.forEach(k=>{
     const e=$('s_'+k); let d=0;
-    if(r.n) d=r.n[k]-r.v[k];
+    if(r.n){
+      d=r.n[k]-r.v[k];   // kolom "Nilai saran (wajar)": nilai akhir hasil saran, tampil langsung di samping Adjustment
+      const vv=$('v_'+k), chg=Math.abs(d)>=0.5;
+      vv.innerHTML=chg?`<span class="${d>0?'up':'down'}"><span class="nom" data-val="${plainNum(r.n[k])}" title="Klik untuk menyalin ${plainNum(r.n[k])}">${fmtAngka(r.n[k])}</span></span><small>${d>0?'naik ':'turun '}${fmtAngka(Math.abs(d))}</small>`:`<span class="zero">${fmtAngka(r.n[k])}</span><small>tetap</small>`;
+    }
     if(Math.abs(d)<0.5){
       e.innerHTML=(L[k]&&r.tipe!=='wajar'&&r.tipe!=='kosong')?'<span class="zero">🔒 '+(LM[k]?'dipertahankan':'sudah Anda ubah')+'</span>':'—';
       return;
@@ -839,6 +846,7 @@ KOLOM.forEach(k=>{
   rows+=`<tr id="r_${k}"><td><b>${k}</b> ${NAMA[k]}</td>
   <td><input type="text" id="a_${k}" inputmode="decimal" autocomplete="off" placeholder="0"${k==='28c'?' readonly tabindex="-1" class="ro"':''}></td>
   <td><input type="text" id="d_${k}" inputmode="decimal" autocomplete="off" placeholder="0"${k==='28c'?' readonly tabindex="-1" class="ro"':''}></td>
+  <td class="sg-col num"><div class="sg" id="v_${k}">—</div></td>
   <td class="num"><span id="x_${k}"></span></td>
   <td class="sg-col"><div class="sg" id="s_${k}">—</div>${k==='28c'?'':`<label class="tahan"><input type="checkbox" id="h_${k}"> pertahankan nilai ini</label>`}</td></tr>`;
 });
@@ -846,6 +854,7 @@ EXTRA.forEach(k=>{   // kolom tambahan: tidak masuk perhitungan utama
   rows+=`<tr class="extra"><td><b>${k}</b> ${NAMA[k]} <span class="small">(tidak masuk perhitungan utama)</span></td>
   <td><input type="text" id="a_${k}" inputmode="decimal" autocomplete="off" placeholder="0"></td>
   <td><input type="text" id="d_${k}" inputmode="decimal" autocomplete="off" placeholder="0"></td>
+  <td class="sg-col"></td>
   <td class="num"><span id="x_${k}"></span></td>
   <td class="sg-col"></td></tr>`;
 });
@@ -874,6 +883,15 @@ ALL.forEach(k=>{
     syncTotal(); update();
   });
 });
+$('terapkan').onclick=()=>{   // autofill: isi kolom Adjustment dengan nilai saran
+  const r=lastSaran; if(!r||!r.n) return;
+  KOLOM.forEach(k=>{
+    if(k==='28c') return;
+    if(Math.abs(r.n[k]-r.v[k])<0.5) return;
+    S.adj[k]=fmtAngka(r.n[k]); $('d_'+k).value=S.adj[k]; S.dirty[k]=(S.adj[k]!==S.awal[k]);
+  });
+  syncTotal(); update();
+};
 $('salin').onclick=()=>{ALL.forEach(k=>{S.adj[k]=S.awal[k];S.dirty[k]=false;$('d_'+k).value=S.adj[k];});syncTotal();update();};
 $('reset').onclick=()=>{ALL.forEach(k=>{S.awal[k]='';S.adj[k]='';S.dirty[k]=false;S.tahan[k]=false;$('a_'+k).value='';$('d_'+k).value='';if($('h_'+k))$('h_'+k).checked=false;});syncTotal();update();};
 $('resetKat').onclick=()=>{$('reset').onclick();S.kat='';$('kat').value='';buildKodeKol();update();};
