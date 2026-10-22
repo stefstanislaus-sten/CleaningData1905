@@ -720,8 +720,9 @@ function copyText(t,btn){
 function salinNominal(el){  // nilai disalin dari data-val (angka polos), tampilan tidak diubah
   salinKe(el.getAttribute('data-val'),()=>{el.classList.add('copied');setTimeout(()=>el.classList.remove('copied'),1300);});
 }
+function nv(k,t){return (EXTRA.indexOf(k)>=0&&!S[t][k])?'0':S[t][k];}   // 27b & 26e kosong dianggap 0
 function renderGen(){
-  const ch=ALL.filter(k=>S.awal[k]!==S.adj[k]&&(k!=='28c'||S.pakai28c));
+  const ch=ALL.filter(k=>nv(k,'awal')!==nv(k,'adj')&&(k!=='28c'||S.pakai28c));
   $('hint26').style.display=S.th26?'block':'none';
   const box=$('gen'); box.innerHTML='';
   // kalimat tambahan: selisih 26f - 27c dimasukkan ke 27b (hanya bila pengeluaran melebihi pendapatan)
@@ -736,7 +737,7 @@ function renderGen(){
   else{
     const wrap=document.createElement('div');wrap.className='grid2';
     [['CATATAN PRIBADI [dengan nilai awal]',true],['FASIH/KONFIRMASI [tanpa nilai awal]',false]].forEach(([jd,tampil])=>{
-      const t=ch.map(k=>kalimat(kodeFor(k),lab(k),S.awal[k],S.adj[k],tampil)).filter(Boolean).concat(selLine(tampil)||[]).join('\n');
+      const t=ch.map(k=>kalimat(kodeFor(k),lab(k),nv(k,'awal'),nv(k,'adj'),tampil)).filter(Boolean).concat(selLine(tampil)||[]).join('\n');
       const d=document.createElement('div');
       const head=document.createElement('div');head.className='row';
       head.innerHTML='<b></b>';head.firstChild.textContent=jd;
@@ -746,7 +747,7 @@ function renderGen(){
     });
     box.appendChild(wrap);
     // pengingat: 27b berubah -> flag Kode DC di 27c; 26e berubah -> flag di 26f (kode bisa diklik untuk disalin)
-    const rk=EXTRA.filter(k=>S.awal[k]!==S.adj[k]||(k==='27b'&&selLine(true)));
+    const rk=EXTRA.filter(k=>nv(k,'awal')!==nv(k,'adj')||(k==='27b'&&selLine(true)));
     if(rk.length){
       const rm=document.createElement('div');rm.className='box warn';
       rm.innerHTML='🚩 <b></b><div style="margin-top:4px"></div>';
