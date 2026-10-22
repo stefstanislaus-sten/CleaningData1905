@@ -720,7 +720,7 @@ function copyText(t,btn){
 function salinNominal(el){  // nilai disalin dari data-val (angka polos), tampilan tidak diubah
   salinKe(el.getAttribute('data-val'),()=>{el.classList.add('copied');setTimeout(()=>el.classList.remove('copied'),1300);});
 }
-function nv(k,t){return (EXTRA.indexOf(k)>=0&&!S[t][k])?'0':S[t][k];}   // 27b & 26e kosong dianggap 0
+function nv(k,t){return S[t][k]?S[t][k]:'0';}   // isian kosong dianggap 0
 function renderGen(){
   const ch=ALL.filter(k=>nv(k,'awal')!==nv(k,'adj')&&(k!=='28c'||S.pakai28c));
   $('hint26').style.display=S.th26?'block':'none';
