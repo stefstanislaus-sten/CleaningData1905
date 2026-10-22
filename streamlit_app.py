@@ -301,7 +301,7 @@ pre{margin:4px 0;padding:10px 12px;background:var(--card);border-radius:8px;whit
 <summary><b>⚙️ Pengaturan saran</b></summary>
 <div class="small">Urutan saran: <b>U4</b> (aset 28a+28b disesuaikan ke batas 0,2/0,4 dari Output) → <b>U3</b> (biaya 26b+26d disesuaikan ke batas kategori) → <b>U5</b> (upah 26a ke batas 0,4/0,6 dari NTB). Penambahan/pengurangan dibagi proporsional ke kolom terkait dan dibulatkan sesuai skala nilainya (nilai puluhan juta → kelipatan jutaan, nilai jutaan → kelipatan ratusan ribu).</div>
 <label><input type="checkbox" id="kunci"> Otomatis pertahankan kolom yang sudah saya ubah</label>
-<div class="small">Kategori <b>G</b> (perdagangan besar): 26c ditampilkan dan saran untuk U3 (26c disesuaikan, lalu ada alternatif lewat 26b/26d) dan U4 (aset 28a/28b); U5 tidak dicek.</div>
+<div class="small">Kategori <b>G</b> (perdagangan besar): 26c ditampilkan dan saran untuk U3 (26c disesuaikan, lalu ada alternatif lewat 26b/26d) U4 (aset 28a/28b), dan U5 (upah 26a).</div>
 </details>
 <div class="scroll"><table id="tin" class="hide-sg">
 <thead><tr><th>Kolom</th><th>Perhitungan Data Awal</th><th>Perhitungan Data Adjustment</th><th class="num">Perubahan (Adj &minus; Awal)</th><th class="num sg-col">Saran perbaikan perhitungan</th></tr></thead>
@@ -429,7 +429,6 @@ function evaluasi(h){
     if(i===0){const ok=v>=0; return {txt:fmtAngka(v),cls:ok?'ok':'bad',stat:ok?'✅ Wajar':'❌ Tidak wajar'};}
     if(i===1) return {txt:fmtAngka(v),cls:'na',stat:'➖ Tanpa syarat'};
     if(i===2&&!S.kat) return {txt:v===null?'-':fmtR(v),cls:'warn',stat:'⚠️ Pilih kategori dulu'};
-    if(S.kat==='G'&&i===4) return {txt:v===null?'-':fmtR(v),cls:'na',stat:'➖ Tidak dicek (kategori G)'};
     const s=stRasio(v,iv[i]); return {txt:v===null?'-':fmtR(v),cls:s[0],stat:s[1]};
   });
 }
@@ -517,6 +516,13 @@ function rencanaG(v,L,f,s){
       else if(r3(r)>U4[1]+1e-9){dA=O2/U4[1]-A; notes.push('U4 > 0,4 → 28a+28b minimal = Output ÷ 0,4 = '+fmtAngka(O2/U4[1])+' (ditambah '+fmtAngka(dA)+').');}
     }
     if(dA) bagiProp(n,['28a','28b'],dA,L,f);
+  }
+  // --- U5: upah (26a), sama seperti kategori lain ---
+  const W=v['26a'], N2=n['27a']-n['26c']-(n['26b']+n['26d']);
+  if(!L['26a']&&N2>0&&!inR(W/N2,U5[0],U5[1])){
+    const tgt=(W/N2<U5[0]?U5[0]:U5[1])*N2, dW=tgt-W;
+    notes.push('U5: upah 26a '+(dW>0?'minimal = ':'maksimal = ')+fmtAngka(tgt)+' ('+(dW>0?'ditambah ':'dikurangi ')+fmtAngka(Math.abs(dW))+').');
+    bagiProp(n,['26a'],dW,L,f);
   }
   n['28c']=n['28a']+n['28b'];
   return {n:n,notes:notes};
@@ -983,8 +989,8 @@ with tab_anomali:
             "Output × (1 − batas bawah); jika di atas batas atas, 26b+26d ditambah sampai minimal "
             "Output × (1 − batas atas). Perubahan dibagi proporsional ke 26b dan 26d, dengan 26b diberi bobot 2× sehingga porsinya lebih besar.\n"
             "- **U5**: upah 26a disesuaikan ke batas 0,4 / 0,6 dari NTB.\n"
-            "- **Kategori G**: 26c ditampilkan; U3 dan U4 yang dicek (U5 tidak). Jika U3 < batas bawah, 26c maksimal = 27a − (26b+26d) ÷ (1 − batas bawah); "
-            "jika U3 > batas atas, 26c minimal = 27a − (26b+26d) ÷ (1 − batas atas). Tersedia alternatif mengambil sebagian perbaikan lewat 26b/26d. U4 pada kategori G diperbaiki seperti kategori lain, memakai Output setelah 26c disesuaikan.\n"
+            "- **Kategori G**: 26c ditampilkan; U3, U4, dan U5 dicek seperti kategori lain. Jika U3 < batas bawah, 26c maksimal = 27a − (26b+26d) ÷ (1 − batas bawah); "
+            "jika U3 > batas atas, 26c minimal = 27a − (26b+26d) ÷ (1 − batas atas). Tersedia alternatif mengambil sebagian perbaikan lewat 26b/26d. U4 dan U5 pada kategori G diperbaiki seperti kategori lain, memakai Output dan NTB setelah 26c disesuaikan.\n"
             "- Pembulatan mengikuti skala nilai kolom (mis. 50 juta → kelipatan jutaan; 5 juta → kelipatan ratusan ribu).\n"
             "- Kolom yang sudah Anda ubah di Adjustment, atau yang dicentang *pertahankan nilai ini*, tidak diubah. "
             "Klik nominal pada kolom saran untuk menyalinnya (angka polos, tanpa titik).\n\n"
