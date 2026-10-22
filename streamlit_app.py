@@ -41,7 +41,7 @@ NAMA_KOLOM = {
     "28b": "Nilai aset selain tanah dan bangunan",
     "28c": "Nilai total aset (28a + 28b)",
     "27b": "Pendapatan lainnya",
-    "26e": "Pengeluaran lainnya",
+    "26e": "Biaya NON-operasional",
 }
 
 # Interval kewajaran R_NTB/Output [U3] per kategori (None = tidak ada interval)
